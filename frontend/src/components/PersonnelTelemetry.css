@@ -1,0 +1,154 @@
+.telemetry-section {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  height: 100%;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-sm);
+}
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.section-title-icon {
+  color: var(--color-brand);
+}
+.view-all-link {
+  font-size: 13px;
+  color: var(--color-brand);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+.view-all-link:hover {
+  text-decoration: underline;
+}
+
+.telemetry-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.telemetry-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--bg-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.telemetry-item:hover {
+  background-color: var(--bg-card-hover);
+  border-color: var(--border-light);
+}
+
+.worker-info-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.worker-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border-light);
+}
+
+.worker-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.worker-name-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+}
+
+.worker-id {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-brand);
+}
+
+.worker-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.worker-location {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.harness-status-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.harness-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.harness-value {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.harness-value.warning { color: var(--color-brand); }
+.harness-value.safe { color: var(--color-safe); }
+.harness-value.critical { color: var(--color-critical); }
+
+.status-badge {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: 1px solid transparent;
+}
+
+.status-badge.caution {
+  color: var(--color-brand);
+  background-color: var(--color-brand-muted);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.status-badge.safe {
+  color: var(--color-safe);
+  background-color: var(--color-safe-bg);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.status-badge.critical {
+  color: var(--color-critical);
+  background-color: var(--color-critical-bg);
+  border-color: var(--color-critical-border);
+}
