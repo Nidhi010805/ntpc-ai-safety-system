@@ -1,23 +1,6 @@
 @import "tailwindcss";
 
 :root {
-<<<<<<< HEAD
-  font-family: Inter, system-ui, Arial, sans-serif;
-
-  --bg-primary: #0b1120;
-  --bg-secondary: #111827;
-  --bg-card: #151e2e;
-
-  --border: #253044;
-
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-
-  --safe: #22c55e;
-  --warning: #f59e0b;
-  --critical: #ef4444;
-  --info: #38bdf8;
-=======
   /* Color Palette */
   --bg-main: #0a0a0a;
   --bg-panel: #111111;
@@ -28,27 +11,27 @@
   --border-light: #3f3f46;
 
   --text-primary: #ffffff;
-  --text-secondary: #a1a1aa; /* Zinc 400 */
-  --text-muted: #71717a; /* Zinc 500 */
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
 
   /* Semantic Colors */
-  --color-brand: #f59e0b; /* Amber 500 - Gold/Orange */
+  --color-brand: #f59e0b;
   --color-brand-muted: rgba(245, 158, 11, 0.2);
   
-  --color-critical: #ef4444; /* Red 500 */
+  --color-critical: #ef4444;
   --color-critical-bg: rgba(239, 68, 68, 0.15);
   --color-critical-border: rgba(239, 68, 68, 0.4);
 
-  --color-warning: #eab308; /* Yellow 500 */
+  --color-warning: #eab308;
   --color-warning-bg: rgba(234, 179, 8, 0.15);
   
-  --color-safe: #10b981; /* Emerald 500 */
+  --color-safe: #10b981;
   --color-safe-bg: rgba(16, 185, 129, 0.15);
   
-  --color-info: #3b82f6; /* Blue 500 */
+  --color-info: #3b82f6;
   --color-info-bg: rgba(59, 130, 246, 0.15);
   
-  --color-cyan: #06b6d4; /* Cyan 500 - for wind speed */
+  --color-cyan: #06b6d4;
 
   /* Typography */
   --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -64,26 +47,10 @@
   --spacing-md: 16px;
   --spacing-lg: 24px;
   --spacing-xl: 32px;
->>>>>>> 27338845b2b4659db0d9f3aecb3a63a79a936a68
 }
 
 * {
   box-sizing: border-box;
-<<<<<<< HEAD
-}
-
-body {
-  margin: 0;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-}
-
-button,
-input,
-select {
-  font: inherit;
-}
-=======
   margin: 0;
   padding: 0;
 }
@@ -123,13 +90,16 @@ button {
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
   background: var(--bg-main);
 }
+
 ::-webkit-scrollbar-thumb {
   background: var(--border-color);
   border-radius: var(--radius-md);
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-light);
 }
@@ -153,10 +123,10 @@ button {
 .items-center { align-items: center; }
 .justify-between { justify-content: space-between; }
 .justify-center { justify-content: center; }
+
 .gap-sm { gap: var(--spacing-sm); }
 .gap-md { gap: var(--spacing-md); }
 .gap-lg { gap: var(--spacing-lg); }
 
 .w-full { width: 100%; }
 .h-full { height: 100%; }
->>>>>>> 27338845b2b4659db0d9f3aecb3a63a79a936a68
