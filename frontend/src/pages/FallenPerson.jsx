@@ -1,9 +1,7 @@
 onst FallenPerson = () => {
   return (
     <div className="min-h-screen bg-[#0f1418] text-[#dee3e8] md:ml-[240px]">
-      {/* =====================================================
-          TOP NAVBAR
-      ====================================================== */}
+      {/* TOP NAVBAR */}
 
       <nav
         className="
@@ -83,9 +81,7 @@ onst FallenPerson = () => {
         </div>
       </nav>
 
-      {/* =====================================================
-          MAIN CONTENT
-      ====================================================== */}
+      {/* MAIN CONTENT */}
 
       <main
         className="
@@ -95,9 +91,7 @@ onst FallenPerson = () => {
           lg:px-6
         "
       >
-        {/* ===================================================
-            PAGE HEADER
-        ==================================================== */}
+        {/* PAGE HEADER */}
 
         <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -147,9 +141,7 @@ onst FallenPerson = () => {
           </div>
         </header>
 
-        {/* ===================================================
-            KPI CARDS
-        ==================================================== */}
+        {/* KPI CARDS */}
 
         <section
           className="
@@ -198,9 +190,7 @@ onst FallenPerson = () => {
           />
         </section>
 
-        {/* ===================================================
-            LIVE FEED + ACTIVE ALERTS
-        ==================================================== */}
+        {/* LIVE FEED + ACTIVE ALERTS */}
 
         <section
           className="
@@ -211,9 +201,7 @@ onst FallenPerson = () => {
             xl:flex-row
           "
         >
-          {/* =================================================
-              LIVE FEED WITH POSE OVERLAY
-          ================================================== */}
+          {/* LIVE FEED WITH POSE OVERLAY */}
 
           <div
             className="
@@ -264,9 +252,7 @@ onst FallenPerson = () => {
             </div>
           </div>
 
-          {/* =================================================
-              ACTIVE FALLEN ALERTS
-          ================================================== */}
+          {/* ACTIVE FALLEN ALERTS */}
 
           <aside
             className="
@@ -344,14 +330,10 @@ onst FallenPerson = () => {
           </aside>
         </section>
 
-        {/* ===================================================
-            GROUND-PLANE MAP + TRACK TABLE
-        ==================================================== */}
+        {/* GROUND-PLANE MAP + TRACK TABLE */}
 
         <section className="flex flex-col gap-4 xl:flex-row">
-          {/* =================================================
-              STATION GROUND-PLANE MAP
-          ================================================== */}
+          {/* STATION GROUND-PLANE MAP */}
 
           <div
             className="
@@ -381,9 +363,7 @@ onst FallenPerson = () => {
             </div>
           </div>
 
-          {/* =================================================
-              TRACK TABLE
-          ================================================== */}
+          {/* TRACK TABLE */}
 
           <div
             className="
@@ -472,9 +452,7 @@ onst FallenPerson = () => {
   );
 };
 
-/* ==========================================================
-   KPI CARD
-========================================================== */
+/* KPI CARD */
 
 function KpiCard({
   title,
@@ -541,9 +519,7 @@ function KpiCard({
   );
 }
 
-/* ==========================================================
-   POSE CAMERA FEED (skeleton overlay on live feed)
-========================================================== */
+/* POSE CAMERA FEED (skeleton overlay on live feed) */
 
 function PoseCameraFeed() {
   return (
@@ -630,9 +606,7 @@ function PoseCameraFeed() {
   );
 }
 
-/* ==========================================================
-   FEED STAT
-========================================================== */
+/* FEED STAT */
 
 function FeedStat({ label, value }) {
   return (
@@ -645,9 +619,7 @@ function FeedStat({ label, value }) {
   );
 }
 
-/* ==========================================================
-   ESCALATION CARD
-========================================================== */
+/* ESCALATION CARD */
 
 function EscalationCard({ track, title, detail, meta, stage, eta, type }) {
   const styles = {
@@ -697,9 +669,7 @@ function EscalationCard({ track, title, detail, meta, stage, eta, type }) {
   );
 }
 
-/* ==========================================================
-   STATION GRID MAP
-========================================================== */
+/* STATION GRID MAP */
 
 function StationGridMap() {
   const cols = ["A", "B", "C", "D", "E", "F"];
@@ -786,9 +756,7 @@ function StationGridMap() {
   );
 }
 
-/* ==========================================================
-   LEGEND DOT
-========================================================== */
+/* LEGEND DOT */
 
 function LegendDot({ color, label }) {
   return (
@@ -799,9 +767,7 @@ function LegendDot({ color, label }) {
   );
 }
 
-/* ==========================================================
-   TRACK TABLE ROW
-========================================================== */
+/* TRACK TABLE ROW */
 
 function TrackRow({ track, zone, camera, grid, state, duration, roster, rosterOk, muted = false }) {
   const stateStyles = {
