@@ -13,9 +13,6 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import LiveMonitoring from "./pages/LiveMonitoring";
 import Settings from "./pages/Settings";
-import FireSmoke from "./pages/FireSmoke";
-import AshLeakage from "./pages/AshLeakage";
-import Switchyard from "./pages/Switchyard";
 
 function App() {
   const location = useLocation();
@@ -72,7 +69,9 @@ function App() {
 
         <Route
           path="/fire-safety"
-          element={<FireSmoke />}
+          element={
+            <ComingSoon title="Fire Safety" />
+          }
         />
 
         <Route
@@ -84,12 +83,16 @@ function App() {
 
         <Route
           path="/switchyard-safety"
-          element={<Switchyard />}
+          element={
+            <ComingSoon title="Switchyard Safety" />
+          }
         />
 
         <Route
           path="/ash-handling"
-          element={<AshLeakage />}
+          element={
+            <ComingSoon title="Ash Handling" />
+          }
         />
 
         <Route
