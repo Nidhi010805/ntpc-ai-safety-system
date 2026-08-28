@@ -1,61 +1,105 @@
-# HeightSafe‑X — Frontend
+# HeightSafe-X
 
-A predictive work-at-height safety console for NTPC, built to spec from the
-project's frontend plan. This folder is the **frontend only** — it renders
-whatever the AI/sensor backend sends; it does not train models or run sensors.
+HeightSafe-X is a responsive safety-monitoring dashboard for NTPC work-at-height operations. It brings worker risk, PPE status, camera and thermal events, plant hazards, alerts, incident history, and evacuation guidance into one interface.
 
-## Stack
-- React 19 + Vite
-- Tailwind CSS v4 (design tokens in `src/index.css`)
-- React Router v7 for navigation
-- Recharts for charts
-- lucide-react for icons
+> This repository currently contains the frontend prototype. It uses simulated data and is ready to be connected to a REST, WebSocket, or MQTT backend.
+
+## Features
+
+- Safety overview dashboard with risk trends, zone summaries, camera health, and active alerts
+- Live worker monitoring and individual worker risk details
+- PPE compliance tracking
+- Fire and smoke, man-down, switchyard, and ash-leakage monitoring
+- Interactive digital twin, risk heatmap, and predictive unsafe zones
+- Evacuation-route guidance and camera/thermal monitoring
+- Alerts, incident history, reports, and system-health pages
+- Responsive desktop and mobile navigation
+
+## Technology
+
+- React 19
+- Vite 8
+- React Router 7
+- Tailwind CSS 4
+- Recharts
+- Lucide React icons
 
 ## Getting started
+
+### Prerequisites
+
+- Node.js 20 or later
+- npm
+
+### Install and run
+
 ```bash
+cd frontend
 npm install
-npm run dev       # http://localhost:5173
-npm run build     # production build -> dist/
+npm run dev
 ```
 
-## Structure
-```
-src/
-├── components/     Sidebar, Topbar, Layout, Panel, StatusBadge, RiskGauge, StatCard
-├── pages/          One file per route (see below)
-├── data/           mockData.js — simulated backend feed (swap for real API/WebSocket/MQTT)
-├── lib/            levels.js — shared risk-level -> color/label config
-└── index.css       Design tokens (colors, fonts) + global styles
+Open the URL printed by Vite (normally `http://localhost:5173`).
+
+### Other commands
+
+```bash
+npm run build    # create a production build in frontend/dist
+npm run preview  # preview the production build locally
+npm run lint     # run Oxlint
 ```
 
-## Pages / routes
-| Route          | Page               | Matches plan section |
-|----------------|---------------------|------------------------|
-| /login         | Login                | Login |
-| /              | Dashboard             | Main Safety Dashboard |
-| /monitoring    | Live Worker Monitoring | Live Worker Monitoring |
-| /ppe           | PPE Compliance         | PPE Compliance Visualization |
-| /digital-twin  | Digital Twin           | 3D Digital Twin (2D top-down twin; swap in React Three Fiber for full 3D) |
-| /heatmap       | Risk Heatmap           | Risk & Hazard Heatmap |
-| /predictive    | Predictive Zones       | Predictive Unsafe-Zone Visualization |
-| /evacuation    | Evacuation             | Safe Route & Evacuation Guidance |
-| /camera        | Camera / Thermal       | Camera/Thermal Monitoring |
-| /alerts        | Alerts                 | Real-Time Safety Alerts |
-| /incidents     | Incident History       | Incident & Alert History |
-| /worker/:id    | Worker Detail          | Worker Detail + Explainable AI Panel |
+## Application routes
 
-## Connecting to the real backend
-Everything currently reads from `src/data/mockData.js`. To go live:
-1. Replace the exported arrays/functions with REST calls (fetch/axios) on mount.
-2. For live updates, open a WebSocket or MQTT client (e.g. `mqtt.js`) and update
-   the same state shape the components already expect (`workers`, `zones`, `alerts`, `incidents`).
-3. Keep the shape of each object (see `mockData.js`) the same, or update the
-   components that read from it — they were kept close to what the plan's
-   AI outputs look like (risk score, PPE list, harness boolean, zone id, etc.).
+| Route | Module |
+| --- | --- |
+| `/login` | Login |
+| `/` | Safety dashboard |
+| `/monitoring` | Live worker monitoring |
+| `/fire-smoke` | Fire and smoke monitoring |
+| `/ppe` | PPE compliance |
+| `/man-down` | Man-down detection |
+| `/switchyard` | Switchyard safety |
+| `/ash-leakage` | Ash-leakage monitoring |
+| `/digital-twin` | Digital twin |
+| `/heatmap` | Risk and hazard heatmap |
+| `/predictive` | Predictive unsafe zones |
+| `/evacuation` | Evacuation routes |
+| `/camera` | Camera and thermal monitoring |
+| `/alerts` | Real-time alerts |
+| `/incidents` | Incident history |
+| `/reports` | Safety reports |
+| `/system-health` | System health |
+| `/worker/:id` | Worker detail and risk explanation |
+
+## Project structure
+
+```text
+heightsafe-x/
+├── README.md
+└── frontend/
+    ├── public/             # Static icons and favicon
+    └── src/
+        ├── components/     # Shared layout and UI components
+        ├── data/           # Simulated plant, worker, alert, and sensor data
+        ├── lib/            # Shared risk-level utilities
+        ├── pages/          # Route-level screens
+        ├── App.jsx         # Route configuration
+        └── index.css       # Design tokens and global styles
+```
+
+## Connecting a backend
+
+The UI is currently powered by [`frontend/src/data/mockData.js`](frontend/src/data/mockData.js). Replace or wrap these exports with your backend data source while retaining the object shapes used by the pages.
+
+For production integration:
+
+1. Fetch initial workers, zones, alerts, incidents, and camera data from REST endpoints.
+2. Subscribe to live sensor events through WebSocket or MQTT.
+3. Store incoming data in React state or a dedicated state-management layer.
+4. Pass the normalized data to existing screens, including risk score, PPE status, zone, camera event, and severity fields.
 
 ## Notes
-- Color palette and type system live in `src/index.css` under `@theme`.
-- All pages are responsive from small mobile widths up through wide desktop.
-- The 3D Digital Twin page ships as a 2D top-down interactive site view for
-  this build; the plan's React Three Fiber 3D scene can be dropped into
-  `src/pages/DigitalTwin.jsx` without touching the rest of the app.
+
+- The digital twin is a 2D top-down plant view in this frontend build.
+- The dashboard is a UI prototype; alert decisions and safety actions must be validated by qualified operational teams before production use.
