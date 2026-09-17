@@ -4,6 +4,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import LiveMonitoring from './pages/LiveMonitoring'
 import FireSmoke from './pages/FireSmoke'
+import LiveCamera from './pages/LiveCamera'
 import PpeCompliance from './pages/PpeCompliance'
 import ManDown from './pages/ManDown'
 import SwitchyardSafety from './pages/SwitchyardSafety'
@@ -12,7 +13,7 @@ import DigitalTwin from './pages/DigitalTwin'
 import RiskHeatmap from './pages/RiskHeatmap'
 import PredictiveZones from './pages/PredictiveZones'
 import Evacuation from './pages/Evacuation'
-import CameraThermal from './pages/CameraThermal'
+import CameraThermal from './pages/LiveCamera'
 import Alerts from './pages/Alerts'
 import IncidentHistory from './pages/IncidentHistory'
 import Reports from './pages/Reports'
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/evacuation" element={<Evacuation />} />
         <Route path="/camera" element={<CameraThermal />} />
         <Route path="/alerts" element={<Alerts />} />
+        <Route path="/camera" element={<LiveCamera />} />
         <Route path="/incidents" element={<IncidentHistory />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/system-health" element={<SystemHealth />} />
