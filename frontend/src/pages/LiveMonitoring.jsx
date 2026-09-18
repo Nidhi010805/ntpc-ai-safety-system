@@ -1,19 +1,34 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Camera,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Download,
   Grid2X2,
   List,
   RefreshCw,
+  RotateCcw,
   Search,
   VideoOff,
   Wifi,
   Wrench,
+  X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react'
+
+const PAN_LIMIT = 100
+const TILT_LIMIT = 60
+const PTZ_STEP = 10
+const ZOOM_MIN = 1
+const ZOOM_MAX = 5
+const ZOOM_STEP = 0.5
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 
 const cameras = [
   {
@@ -267,6 +282,7 @@ export default function LiveCamera() {
   const [status, setStatus] = useState('all')
   const [area, setArea] = useState('all')
   const [view, setView] = useState('grid')
+  const [activeCamera, setActiveCamera] = useState(null)
 
   const filteredCameras = useMemo(() => {
     return cameras.filter((camera) => {
@@ -459,6 +475,7 @@ export default function LiveCamera() {
               <CameraCard
                 key={camera.id}
                 camera={camera}
+                onOpen={() => setActiveCamera(camera)}
               />
             ))}
           </div>
@@ -478,6 +495,13 @@ export default function LiveCamera() {
       ========================================== */}
       {(view === 'table' || view === 'grid') && (
         <InventoryTable />
+      )}
+
+      {activeCamera && (
+        <PtzModal
+          camera={activeCamera}
+          onClose={() => setActiveCamera(null)}
+        />
       )}
     </div>
   )
@@ -530,7 +554,7 @@ function StatCard({ icon: Icon, value, label, type }) {
   )
 }
 
-function CameraCard({ camera }) {
+function CameraCard({ camera, onOpen }) {
   const isCritical = camera.status === 'critical'
   const isHigh = camera.status === 'high'
   const isMedium = camera.status === 'medium'
@@ -546,7 +570,12 @@ function CameraCard({ camera }) {
     >
       {/* VIDEO */}
       {isOffline ? (
-        <div className="flex aspect-[16/8.4] flex-col items-center justify-center bg-[#dbe8fb]">
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`Open PTZ control for ${camera.id} (offline)`}
+          className="flex aspect-[16/8.4] w-full flex-col items-center justify-center bg-[#dbe8fb]"
+        >
           <VideoOff className="h-7 w-7 text-[#8ba1be]" />
 
           <p className="mt-2 text-[9px] font-bold text-[#536174]">
@@ -556,9 +585,14 @@ function CameraCard({ camera }) {
           <p className="mt-1 text-[7px] text-[#7d8da3]">
             Signal lost from JB #1
           </p>
-        </div>
+        </button>
       ) : (
-        <div className="relative aspect-[16/8.4] overflow-hidden bg-[#1d2939]">
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`Open PTZ control for ${camera.id}`}
+          className="group relative block aspect-[16/8.4] w-full overflow-hidden bg-[#1d2939]"
+        >
           <img
             src={camera.image}
             alt={camera.title}
@@ -611,7 +645,11 @@ function CameraCard({ camera }) {
           <span className="absolute bottom-2 left-2 bg-black/60 px-1.5 py-0.5 font-mono text-[5.5px] text-white">
             2026-09-12 14:32:07:20
           </span>
-        </div>
+
+          <span className="absolute inset-0 flex items-center justify-center bg-black/0 text-[8px] font-bold uppercase tracking-[0.08em] text-transparent transition-colors group-hover:bg-black/35 group-hover:text-white">
+            Open PTZ Control
+          </span>
+        </button>
       )}
 
       {/* DETAILS */}
@@ -646,7 +684,10 @@ function CameraCard({ camera }) {
               Snapshot
             </button>
 
-            <button className="rounded-md border border-[#dfe5ee] px-2 py-1 text-[6.5px] font-semibold text-[#536174]">
+            <button
+              onClick={onOpen}
+              className="rounded-md border border-[#dfe5ee] px-2 py-1 text-[6.5px] font-semibold text-[#536174] hover:bg-[#f7f9fc]"
+            >
               PTZ Preset
             </button>
 
@@ -657,7 +698,10 @@ function CameraCard({ camera }) {
             )}
           </div>
 
-          <button className="text-[6.5px] font-bold text-[#00288e]">
+          <button
+            onClick={onOpen}
+            className="text-[6.5px] font-bold text-[#00288e] hover:underline"
+          >
             Details →
           </button>
         </div>
@@ -899,5 +943,197 @@ function InventoryRow({ row }) {
         </button>
       </td>
     </tr>
+  )
+}
+
+function PtzModal({ camera, onClose }) {
+  const [pan, setPan] = useState(0)
+  const [tilt, setTilt] = useState(0)
+  const [zoom, setZoom] = useState(1)
+  const backdropRef = useRef(null)
+
+  const isOffline = camera.status === 'offline'
+  const isCritical = camera.status === 'critical'
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  const handleBackdropClick = (event) => {
+    if (event.target === backdropRef.current) onClose()
+  }
+
+  const resetPtz = () => {
+    setPan(0)
+    setTilt(0)
+    setZoom(1)
+  }
+
+  return (
+    <div
+      ref={backdropRef}
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${camera.title} PTZ control`}
+        className="w-full max-w-[720px] overflow-hidden rounded-2xl bg-white shadow-2xl"
+      >
+        <header className="flex items-start justify-between gap-3 border-b border-[#e6ebf2] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-[8px] font-bold uppercase tracking-[0.08em] text-[#00288e]">
+              {camera.id} · {camera.area}
+            </p>
+            <h2 className="mt-1 truncate text-[14px] font-bold text-[#0b1c30]">
+              {camera.title}
+            </h2>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close PTZ control"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[#94a0b2] transition-colors hover:bg-[#f1f4f9] hover:text-[#0b1c30]"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+
+        <div className="relative aspect-video overflow-hidden bg-[#101828]">
+          {isOffline ? (
+            <div className="flex h-full flex-col items-center justify-center text-white">
+              <VideoOff className="h-10 w-10 text-[#8ba1be]" />
+              <p className="mt-3 text-[10px] font-bold">CAMERA OFFLINE</p>
+              <p className="mt-1 text-[7px] text-[#94a3b8]">
+                PTZ control unavailable — signal lost from JB #1
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="h-full w-full overflow-hidden">
+                <img
+                  src={camera.image}
+                  alt={camera.title}
+                  className="h-full w-full object-cover transition-transform duration-150 ease-out"
+                  style={{ transform: `translate(${pan}%, ${tilt}%) scale(${zoom})` }}
+                />
+              </div>
+
+              <span
+                className={`absolute left-3 top-3 rounded px-1.5 py-0.5 text-[7px] font-bold text-white ${
+                  isCritical ? 'bg-[#ba1a1a]' : 'bg-[#009b69]'
+                }`}
+              >
+                {isCritical ? 'ALARM ACTIVE' : '● LIVE'}
+              </span>
+
+              <span className="absolute bottom-3 left-3 rounded bg-black/65 px-2 py-1 font-mono text-[8px] text-white">
+                PAN {pan > 0 ? '+' : ''}
+                {pan}° · TILT {tilt > 0 ? '+' : ''}
+                {tilt}° · ZOOM {zoom.toFixed(1)}×
+              </span>
+
+              <span className="absolute bottom-3 right-3 rounded bg-black/65 px-2 py-1 font-mono text-[8px] text-white">
+                {new Date().toLocaleString()}
+              </span>
+            </>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-[#e6ebf2] bg-[#f7f9fc] p-4">
+          <PtzGroup label="Pan">
+            <PtzIconButton
+              disabled={isOffline}
+              onClick={() => setPan((p) => clamp(p - PTZ_STEP, -PAN_LIMIT, PAN_LIMIT))}
+              aria-label="Pan left"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </PtzIconButton>
+            <PtzIconButton
+              disabled={isOffline}
+              onClick={() => setPan((p) => clamp(p + PTZ_STEP, -PAN_LIMIT, PAN_LIMIT))}
+              aria-label="Pan right"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </PtzIconButton>
+          </PtzGroup>
+
+          <PtzGroup label="Tilt">
+            <PtzIconButton
+              disabled={isOffline}
+              onClick={() => setTilt((t) => clamp(t - PTZ_STEP, -TILT_LIMIT, TILT_LIMIT))}
+              aria-label="Tilt up"
+            >
+              <ChevronUp className="h-3.5 w-3.5" />
+            </PtzIconButton>
+            <PtzIconButton
+              disabled={isOffline}
+              onClick={() => setTilt((t) => clamp(t + PTZ_STEP, -TILT_LIMIT, TILT_LIMIT))}
+              aria-label="Tilt down"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </PtzIconButton>
+          </PtzGroup>
+
+          <PtzGroup label="Zoom">
+            <PtzIconButton
+              disabled={isOffline}
+              onClick={() => setZoom((z) => clamp(z - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX))}
+              aria-label="Zoom out"
+            >
+              <ZoomOut className="h-3.5 w-3.5" />
+            </PtzIconButton>
+            <span className="min-w-[34px] text-center font-mono text-[10px] font-bold text-[#0b1c30]">
+              {zoom.toFixed(1)}×
+            </span>
+            <PtzIconButton
+              disabled={isOffline}
+              onClick={() => setZoom((z) => clamp(z + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX))}
+              aria-label="Zoom in"
+            >
+              <ZoomIn className="h-3.5 w-3.5" />
+            </PtzIconButton>
+          </PtzGroup>
+
+          <button
+            type="button"
+            onClick={resetPtz}
+            disabled={isOffline}
+            className="ml-auto flex items-center gap-1.5 rounded-lg border border-[#dfe5ee] px-3 py-1.5 text-[8px] font-semibold text-[#536174] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <RotateCcw className="h-3 w-3" /> Reset
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PtzGroup({ label, children }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="font-mono text-[7px] font-bold uppercase tracking-[0.1em] text-[#8b95a5]">
+        {label}
+      </span>
+      {children}
+    </div>
+  )
+}
+
+function PtzIconButton({ children, ...props }) {
+  return (
+    <button
+      type="button"
+      className="grid h-8 w-8 place-items-center rounded-lg border border-[#e3e8f0] bg-white text-[#334155] transition-colors hover:bg-[#eef3ff] hover:text-[#00288e] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-[#334155]"
+      {...props}
+    >
+      {children}
+    </button>
   )
 }
