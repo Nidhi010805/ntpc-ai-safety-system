@@ -19,6 +19,7 @@ import IncidentHistory from './pages/IncidentHistory'
 import Reports from './pages/Reports'
 import SystemHealth from './pages/SystemHealth'
 import WorkerDetail from './pages/WorkerDetail'
+import SettingsEdgeAI from "./pages/SettingsEdgeAI";
 
 export default function App() {
   return (
@@ -43,6 +44,10 @@ export default function App() {
         <Route path="/reports" element={<Reports />} />
         <Route path="/system-health" element={<SystemHealth />} />
         <Route path="/worker/:id" element={<WorkerDetail />} />
+        <Route
+  path="/settings"
+  element={<SettingsEdgeAI />}
+/>
       </Route>
     </Routes>
   )
