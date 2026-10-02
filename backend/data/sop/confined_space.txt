@@ -1,0 +1,95 @@
+Document: General Confined Space Safety Guidance
+Document Type: General Industrial Safety Guidance
+Plant Specific: NO
+Official NTPC SOP: NO
+
+Scope:
+General safety guidance for recognizing confined-space hazards and
+responding to unsafe confined-space conditions.
+
+Keywords:
+confined space, tank, vessel, pit, chamber, oxygen, toxic gas,
+atmosphere, atmospheric testing, ventilation, entry permit,
+standby person, rescue
+
+Hazard Recognition:
+Confined spaces may contain hazardous atmospheres, oxygen deficiency
+or enrichment, toxic gases, physical hazards, or other conditions
+that may become dangerous even when the space initially appears safe.
+
+Immediate Safety Guidance:
+Do not enter a confined space without required authorization and the
+applicable approved entry procedure.
+
+A confined-space entry may require hazard assessment, isolation,
+atmospheric testing, ventilation, communication, standby personnel,
+and rescue arrangements according to the applicable site procedure.
+
+Required atmospheric testing should be performed using approved
+equipment by competent and authorized personnel according to the
+applicable procedure.
+
+Maintain required communication between entrants and designated
+standby personnel.
+
+If unsafe conditions develop, entrants should leave the space
+according to the applicable approved procedure and instructions from
+authorized personnel.
+
+Notify the designated supervisor, safety personnel, control room, or
+emergency response personnel when required by the applicable site
+procedure.
+
+Rescue:
+Do not enter a confined space to rescue another person unless you are
+part of the authorized rescue response and the required controls and
+rescue arrangements are in place.
+
+An unplanned rescue attempt may expose additional personnel to the
+same hazard.
+
+Avoid:
+Do not enter without required authorization.
+
+Do not assume that a confined space is safe because it appears normal.
+
+Do not perform atmospheric testing, isolation, ventilation setup, or
+other specialized entry controls unless trained, competent, authorized,
+and permitted under the applicable procedure.
+
+Do not attempt an unauthorized confined-space rescue.
+
+Do not bypass entry permits, monitoring requirements, standby
+arrangements, or other required controls.
+
+Escalation:
+Unsafe conditions, loss of communication, suspected hazardous
+atmosphere, collapse of an entrant, or another confined-space
+emergency should be escalated according to the applicable site
+emergency and rescue procedure.
+
+Limitations:
+This document does not provide:
+
+- plant-specific confined-space locations
+- permit approval requirements for a specific plant
+- acceptable atmospheric limits
+- gas detector settings
+- equipment isolation points
+- ventilation calculations
+- rescue entry steps
+- rescue equipment configuration
+- plant-specific PPE requirements
+- emergency phone numbers
+
+If this information is requested, the available general safety
+guidance does not provide enough information for that action.
+
+Important:
+This is general industrial safety guidance.
+
+It is not an official NTPC SOP and is not a plant-specific
+confined-space entry or rescue procedure.
+
+Applicable site-approved confined-space entry, isolation, monitoring,
+rescue, and emergency procedures always take priority.

@@ -1,0 +1,85 @@
+Document: General PPE Safety Guidance
+Document Type: General Industrial Safety Guidance
+Plant Specific: NO
+Official NTPC SOP: NO
+
+Scope:
+General guidance for the use and condition of Personal Protective
+Equipment in an industrial environment.
+
+Keywords:
+ppe, personal protective equipment, helmet, hard hat, gloves,
+goggles, safety glasses, safety shoes, safety footwear, face shield,
+hearing protection, harness, respirator, respiratory protection,
+damaged ppe, missing ppe
+
+General Safety Guidance:
+Required PPE should be selected according to the task, hazard
+assessment, permit requirements, and applicable site procedure.
+
+Personnel should inspect required PPE before use according to
+applicable instructions and site requirements.
+
+Do not begin or continue a task when mandatory PPE is missing,
+damaged, unsuitable, or incorrectly worn.
+
+Damaged or defective PPE should be removed from service and reported
+according to the applicable site procedure.
+
+Safety helmets, eye protection, gloves, safety footwear, hearing
+protection, respiratory protection, fall-protection equipment, and
+other PPE should be used where required by the applicable hazard
+assessment or site procedure.
+
+Specialized PPE should only be used by personnel who are trained or
+otherwise competent in its correct use and limitations when such
+training or competency is required.
+
+PPE Limitations:
+PPE does not eliminate the underlying hazard.
+
+PPE does not replace hazard elimination, isolation, engineering
+controls, permits, safe systems of work, or other required safety
+controls.
+
+Avoid:
+Do not use damaged or defective PPE.
+
+Do not intentionally bypass mandatory PPE requirements.
+
+Do not assume that one type of PPE is suitable for every hazard.
+
+Do not select specialized respiratory, electrical, chemical, or
+fall-protection PPE solely from this general guidance.
+
+Do not continue a task when required PPE is unavailable or unsuitable.
+
+Escalation:
+Missing, damaged, unsuitable, or uncertain PPE requirements should be
+reported to the appropriate supervisor or safety personnel according
+to the applicable site procedure.
+
+Limitations:
+This document does not provide:
+
+- plant-specific PPE matrices
+- task-specific PPE combinations
+- voltage-rated PPE requirements
+- chemical-specific PPE selection
+- respirator cartridge selection
+- respirator fit-testing requirements
+- fall-protection equipment configuration
+- equipment-specific PPE requirements
+
+If this information is requested, the available general safety
+guidance does not provide enough information for that action.
+
+Important:
+This is general industrial safety guidance.
+
+It is not an official NTPC SOP and is not a plant-specific PPE
+procedure.
+
+Applicable task-specific hazard assessments, permits, manufacturer
+instructions, and plant-approved PPE requirements always take
+priority.

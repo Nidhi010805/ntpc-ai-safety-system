@@ -1,0 +1,88 @@
+Document: General Emergency Evacuation Guidance
+Document Type: General Industrial Safety Guidance
+Plant Specific: NO
+Official NTPC SOP: NO
+
+Scope:
+General safety guidance for responding to an evacuation alarm or
+authorized evacuation instruction in an industrial environment.
+
+Keywords:
+evacuation, evacuate, emergency, alarm, evacuation alarm,
+emergency exit, exit, assembly point, muster point, escape route,
+emergency route, re-entry, personnel accountability
+
+Emergency Evacuation:
+When an evacuation alarm or authorized evacuation instruction is
+issued, follow the applicable site emergency procedure.
+
+Stop work when safe to do so and evacuate according to the applicable
+site procedure.
+
+Use only evacuation routes designated as safe by the applicable site
+emergency plan or authorized emergency personnel.
+
+Follow instructions from authorized emergency personnel.
+
+Keep away from hazardous, restricted, smoke-filled, contaminated,
+or otherwise unsafe areas during evacuation.
+
+Assembly and Accountability:
+After evacuation, proceed according to the site's approved assembly
+or muster arrangements.
+
+Follow the applicable personnel accountability procedure.
+
+Provide requested information to authorized emergency personnel.
+
+If someone is believed to be missing, trapped, or still inside the
+affected area, report this information immediately to authorized
+emergency responders.
+
+Do not attempt an unauthorized rescue.
+
+Avoid:
+Do not enter a hazardous area during evacuation.
+
+Do not return to collect personal belongings.
+
+Do not use an evacuation route that has been declared unsafe or
+restricted.
+
+Do not interfere with emergency response operations.
+
+Do not re-enter the affected area until authorized personnel permit
+re-entry.
+
+Escalation:
+Follow applicable alarms and instructions from authorized emergency
+personnel.
+
+Report missing, trapped, injured, or potentially exposed personnel
+to the designated emergency response personnel according to the
+applicable site procedure.
+
+Limitations:
+This document does not provide:
+
+- plant-specific evacuation routes
+- emergency exit locations
+- assembly or muster point locations
+- evacuation maps
+- emergency phone numbers
+- area-specific escape directions
+- head-count or accountability arrangements for a specific plant
+- emergency transport arrangements
+
+If this information is requested, the available general safety
+guidance does not provide enough information for that action.
+
+Important:
+This is general industrial safety guidance.
+
+It is not an official NTPC emergency plan and is not a plant-specific
+evacuation procedure.
+
+Actual evacuation routes, exits, assembly points, accountability
+arrangements, and emergency instructions must come from the applicable
+plant-approved emergency plan and authorized emergency personnel.

@@ -10,6 +10,7 @@ import {
   Settings,
   Cctv,
   ShieldCheck,
+  Bot,
   X,
   PanelLeftClose,
   PanelLeftOpen,
@@ -22,6 +23,15 @@ const NAV = [
     icon: LayoutDashboard,
     end: true,
   },
+
+  // AI SAFETY AGENT
+  {
+    to: '/safety-agent',
+    label: 'AI Safety Agent',
+    icon: Bot,
+    ai: true,
+  },
+
   {
     to: '/camera',
     label: 'Live Cameras',
@@ -150,6 +160,7 @@ export default function Sidebar({
             ) : (
               <>
                 <PanelLeftClose className="h-4 w-4" />
+
                 <span className="text-[9px] font-semibold">
                   Collapse Sidebar
                 </span>
@@ -169,6 +180,7 @@ export default function Sidebar({
                 end,
                 badge,
                 danger,
+                ai,
               }) => (
                 <NavLink
                   key={to}
@@ -180,7 +192,7 @@ export default function Sidebar({
                     `
                     group flex items-center
                     rounded-lg
-                    transition-colors
+                    transition-all
 
                     ${
                       collapsed
@@ -190,8 +202,10 @@ export default function Sidebar({
 
                     ${
                       isActive
-                        ? 'bg-[#00288e] text-white'
-                        : 'text-[#536174] hover:bg-[#f2f5fa] hover:text-[#10213a]'
+                        ? 'bg-[#00288e] text-white shadow-sm'
+                        : ai
+                          ? 'bg-[#eef4ff] text-[#00288e] hover:bg-[#e2ebff]'
+                          : 'text-[#536174] hover:bg-[#f2f5fa] hover:text-[#10213a]'
                     }
                   `
                   }
@@ -202,13 +216,21 @@ export default function Sidebar({
                         <Icon
                           className={`
                             h-[16px] w-[16px]
+
                             ${
                               isActive
                                 ? 'text-white'
-                                : 'text-[#68778c]'
+                                : ai
+                                  ? 'text-[#00288e]'
+                                  : 'text-[#68778c]'
                             }
                           `}
                         />
+
+                        {/* AI ONLINE DOT */}
+                        {ai && !isActive && (
+                          <span className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        )}
 
                         {collapsed && badge && (
                           <span
@@ -236,6 +258,23 @@ export default function Sidebar({
                           <span className="flex-1 truncate text-[9.5px] font-semibold">
                             {label}
                           </span>
+
+                          {ai && (
+                            <span
+                              className={`
+                                rounded-full px-2 py-0.5
+                                text-[6.5px] font-bold uppercase
+
+                                ${
+                                  isActive
+                                    ? 'bg-white/20 text-white'
+                                    : 'bg-emerald-100 text-emerald-700'
+                                }
+                              `}
+                            >
+                              AI
+                            </span>
+                          )}
 
                           {badge && (
                             <span

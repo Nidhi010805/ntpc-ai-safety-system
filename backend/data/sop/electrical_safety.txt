@@ -1,0 +1,102 @@
+Document: General Electrical Safety Guidance
+Document Type: General Industrial Safety Guidance
+Plant Specific: NO
+Official NTPC SOP: NO
+
+Scope:
+General safety guidance for recognizing and responding to possible
+electrical hazards in an industrial environment.
+
+Keywords:
+electrical, electric, electricity, shock, electric shock, spark,
+sparks, arc, arc flash, switchyard, transformer, electrical panel,
+cable, breaker, isolator, isolation, energized equipment, voltage,
+smoke, burning, short circuit
+
+Hazard Recognition:
+Smoke, sparks, burning smell, abnormal arcing, exposed electrical
+parts, damaged electrical equipment, or other signs of an electrical
+fault should be treated as a potentially serious hazard.
+
+Immediate Safety Guidance:
+Keep personnel away from affected or potentially hazardous electrical
+equipment.
+
+Maintain a safe distance from the hazardous area according to the
+applicable site procedure and instructions from authorized personnel.
+
+Notify the designated control room, supervisor, authorized electrical
+personnel, or emergency response team according to the applicable
+site procedure.
+
+Follow applicable site alarms, barricades, warning signs, evacuation
+instructions, and directions from authorized personnel.
+
+If smoke or fire is present, treat the situation as a possible
+electrical and fire emergency and follow the applicable site emergency
+procedure.
+
+Electrical Work and Isolation:
+Electrical isolation, switching, lockout/tagout, testing for absence
+of voltage, grounding, or other electrical work must only be performed
+by trained and authorized personnel following the applicable approved
+procedure.
+
+This general guidance does not provide equipment-specific switching,
+shutdown, isolation, lockout/tagout, testing, or grounding steps.
+
+Avoid:
+Do not touch exposed conductors, damaged cables, electrical panels,
+transformers, or other potentially energized equipment when an
+electrical fault is suspected.
+
+Do not enter a restricted electrical hazard area unless trained,
+authorized, and permitted under the applicable site procedure.
+
+Do not operate a breaker, isolator, switch, transformer, or other
+electrical equipment based only on this general guidance.
+
+Do not attempt electrical isolation, switching, lockout/tagout,
+voltage testing, grounding, repair, or fault investigation unless
+trained, authorized, and permitted under the applicable approved
+procedure.
+
+Do not use firefighting equipment on or near electrical equipment
+unless trained, authorized, the equipment is suitable for the hazard,
+and its use is permitted by the applicable site procedure.
+
+Do not re-enter a restricted or hazardous electrical area until
+authorized personnel permit re-entry.
+
+Escalation:
+Notify the designated control room, supervisor, authorized electrical
+personnel, or emergency response team according to the applicable
+site procedure.
+
+Limitations:
+This document does not provide:
+
+- plant-specific electrical isolation points
+- transformer switching sequences
+- breaker or isolator operating sequences
+- equipment shutdown sequences
+- plant-specific lockout/tagout steps
+- voltage-specific approach distances
+- plant-specific PPE requirements
+- emergency phone numbers
+- equipment or protection settings
+- relay settings
+- electrical test procedures
+
+If this information is requested, the available general safety
+guidance does not provide enough information for that action.
+
+Important:
+This is general industrial safety guidance.
+
+It is not an official NTPC SOP and is not a plant-specific electrical
+operating or emergency procedure.
+
+Applicable plant-approved electrical safety procedures, operating
+procedures, emergency procedures, and instructions from authorized
+personnel always take priority.

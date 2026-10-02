@@ -1,0 +1,76 @@
+Document: General Fire Safety Guidance
+Document Type: General Industrial Safety Guidance
+Plant Specific: NO
+Official NTPC SOP: NO
+
+Scope:
+General guidance for recognizing and responding to a possible
+industrial fire or significant unexplained smoke.
+
+Keywords:
+fire, aag, smoke, dhua, dhuan, burning, flame, fire alarm,
+transformer smoke, electrical fire, boiler fire
+
+Hazard Recognition:
+Visible flames, uncontrolled burning, significant unexplained
+smoke, or signs of fire should be treated as a potential
+emergency.
+
+Immediate Safety Guidance:
+Raise or confirm the site's emergency alarm according to the
+applicable site procedure.
+
+Notify the designated control room or emergency response team
+according to site procedure.
+
+Warn nearby personnel when it is safe to do so.
+
+Keep personnel away from the affected or potentially hazardous
+area.
+
+Follow the site's approved evacuation procedure and instructions
+from authorized emergency personnel.
+
+After evacuation, proceed according to the site's approved
+assembly and personnel accountability procedure.
+
+Firefighting:
+Firefighting equipment should only be used by personnel who are
+trained, authorized, permitted by site procedure, and able to
+maintain a safe escape route.
+
+Do not instruct an untrained or unauthorized person to fight
+a fire.
+
+Avoid:
+Do not enter or re-enter a smoke-filled or fire-affected area.
+
+Do not approach burning or potentially energized equipment
+unless authorized and permitted by the applicable site procedure.
+
+Do not take unnecessary personal risk to protect equipment or
+property.
+
+Do not provide equipment-specific shutdown, isolation, switching,
+or firefighting instructions from this general guidance.
+
+Escalation:
+For a possible or active fire emergency, notify the designated
+control room or emergency response team according to the
+applicable site procedure.
+
+Limitations:
+This document does not provide plant-specific alarm locations,
+emergency phone numbers, evacuation routes, assembly points,
+equipment isolation points, electrical switching sequences,
+fire-extinguisher selection instructions, or equipment-specific
+firefighting procedures.
+
+Important:
+This is general industrial safety guidance.
+
+It is not an official NTPC SOP and is not a plant-specific
+emergency procedure.
+
+The applicable plant-approved fire and emergency procedures and
+instructions from authorized personnel always take priority.

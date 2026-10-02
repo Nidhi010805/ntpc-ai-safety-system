@@ -1,0 +1,102 @@
+Document: General Machinery Safety Guidance
+Document Type: General Industrial Safety Guidance
+Plant Specific: NO
+Official NTPC SOP: NO
+
+Scope:
+General safety guidance for machinery, conveyors, motors, rotating
+equipment, moving parts, and machinery-related hazards in an
+industrial environment.
+
+Keywords:
+machine, machinery, rotating, conveyor, motor, guard, guarding,
+moving parts, pinch point, crushing, cutting, maintenance, jam,
+isolation, lockout, tagout, loto, vibration, overheating
+
+Hazard Recognition:
+Exposed moving, rotating, cutting, crushing, drawing-in, and
+pinch-point hazards may cause serious injury.
+
+Abnormal noise, vibration, overheating, leakage, damaged guarding,
+or unexpected equipment movement may indicate an unsafe condition.
+
+Immediate Safety Guidance:
+Keep personnel away from exposed moving or rotating machinery and
+other hazardous moving parts.
+
+Report abnormal noise, vibration, overheating, leakage, damaged
+guarding, or other suspected machinery hazards according to the
+applicable site procedure.
+
+Follow applicable warning signs, barricades, operating restrictions,
+and instructions from authorized personnel.
+
+Do not operate machinery when required safety guards or protective
+devices are removed, damaged, bypassed, or defeated.
+
+Moving Machinery:
+Do not reach into moving machinery.
+
+Do not attempt to clear a jam while machinery is moving.
+
+Loose clothing, jewelry, hair, and other items that could become
+entangled should be controlled according to applicable safe working
+requirements.
+
+Maintenance and Isolation:
+Before maintenance, inspection, clearing a jam, or another
+intervention requiring hazardous energy control, equipment should be
+isolated according to the applicable approved energy-isolation
+procedure.
+
+Lockout/tagout or other required isolation controls should only be
+applied or removed by trained and authorized personnel according to
+the applicable approved procedure.
+
+This general guidance does not provide equipment-specific shutdown,
+isolation, lockout/tagout, restart, or testing steps.
+
+Avoid:
+Do not bypass or defeat machinery guards or protective devices.
+
+Do not reach through or around guarding into hazardous moving parts.
+
+Do not perform maintenance or intervention on hazardous machinery
+without the controls required by the applicable approved procedure.
+
+Do not operate switches, breakers, isolation devices, or machinery
+based solely on this general guidance.
+
+Do not restart equipment unless permitted by the applicable approved
+procedure and authorized personnel.
+
+Escalation:
+Suspected unsafe machinery conditions should be reported to the
+appropriate supervisor, control room, maintenance authority, safety
+personnel, or other designated personnel according to the applicable
+site procedure.
+
+Limitations:
+This document does not provide:
+
+- equipment-specific shutdown sequences
+- machinery restart sequences
+- plant-specific isolation points
+- lockout/tagout steps for specific equipment
+- stored-energy release procedures
+- equipment settings
+- guard adjustment procedures
+- maintenance or repair instructions
+
+If this information is requested, the available general safety
+guidance does not provide enough information for that action.
+
+Important:
+This is general industrial safety guidance.
+
+It is not an official NTPC SOP and is not an equipment-specific
+operating or maintenance procedure.
+
+Equipment manuals, applicable plant-approved operating procedures,
+energy-isolation procedures, maintenance procedures, and instructions
+from authorized personnel always take priority.

@@ -1,0 +1,105 @@
+Document: General Chemical Spill Safety Guidance
+Document Type: General Industrial Safety Guidance
+Plant Specific: NO
+Official NTPC SOP: NO
+Chemical Specific SDS: NO
+
+Scope:
+General safety guidance for recognizing and responding to a suspected
+hazardous chemical spill or liquid chemical release in an industrial
+environment.
+
+Keywords:
+chemical, chemical spill, spill, liquid leak, leakage, hazardous
+chemical, acid, caustic, toxic, corrosive, contamination, chemical
+exposure, chemical release, sds, safety data sheet
+
+Hazard Recognition:
+An unknown chemical spill or release should be treated as potentially
+hazardous.
+
+A chemical release may present toxic, corrosive, flammable, reactive,
+or other hazards depending on the substance involved.
+
+Do not assume that an unknown chemical is safe based on its appearance,
+smell, or quantity.
+
+Immediate Safety Guidance:
+Keep unauthorized and unprotected personnel away from the affected
+area.
+
+Notify the designated control room, supervisor, safety personnel, or
+emergency response team according to the applicable site procedure.
+
+Follow applicable alarms, barricades, evacuation instructions, and
+directions from authorized emergency personnel.
+
+When the substance is known, consult the applicable chemical-specific
+Safety Data Sheet and approved site procedure before selecting response
+measures.
+
+Avoid:
+Do not touch an unknown or hazardous chemical directly.
+
+Do not deliberately smell or taste a chemical to identify it.
+
+Do not walk through a chemical spill or contaminated area.
+
+Do not attempt to identify an unknown chemical through direct exposure.
+
+Do not attempt to contain, neutralize, clean, transfer, or stop a
+hazardous chemical release unless trained, authorized, properly
+equipped, and permitted by the applicable approved procedure.
+
+Avoid actions that may spread contamination.
+
+PPE and Spill Response:
+Chemical-response PPE should be selected according to the identified
+chemical, applicable Safety Data Sheet, hazard assessment, and approved
+site procedure.
+
+Do not select chemical-response PPE solely from this general guidance.
+
+Spill containment, cleanup, neutralization, or other direct response
+should only be performed by appropriately trained and authorized
+personnel using the controls required by the applicable procedure.
+
+Exposure:
+If chemical exposure is suspected or has occurred, follow the
+applicable chemical-specific Safety Data Sheet and approved site
+emergency or medical procedure.
+
+Report the exposure according to the applicable site procedure.
+
+Escalation:
+A suspected hazardous chemical release should be reported to the
+designated control room, supervisor, safety personnel, or emergency
+response team according to the applicable site procedure.
+
+Limitations:
+This document does not provide:
+
+- chemical-specific exposure limits
+- chemical identification procedures
+- neutralization instructions
+- spill containment methods for a specific chemical
+- cleanup quantities or materials
+- valve or equipment isolation locations
+- chemical-specific PPE selection
+- respirator or cartridge selection
+- chemical-specific first-aid instructions
+- plant-specific evacuation routes
+- emergency phone numbers
+
+If this information is requested, the available general safety
+guidance does not provide enough information for that action.
+
+Important:
+This is general industrial safety guidance.
+
+It is not an official NTPC SOP, plant-specific chemical emergency
+procedure, or chemical-specific Safety Data Sheet.
+
+The applicable chemical-specific SDS, plant-approved emergency
+procedure, and instructions from authorized personnel always take
+priority.

@@ -1,0 +1,108 @@
+Document: General Gas Leak Safety Guidance
+Document Type: General Industrial Safety Guidance
+Plant Specific: NO
+Official NTPC SOP: NO
+Chemical Specific SDS: NO
+
+Scope:
+General safety guidance for recognizing and responding to a suspected
+toxic, flammable, or unknown gas release in an industrial environment.
+
+Keywords:
+gas, gas leak, toxic gas, flammable gas, chlorine, ammonia, fumes,
+vapor, vapour, smell, gas detector, detector alarm, gas alarm,
+release, leakage
+
+Hazard Recognition:
+A suspected toxic, flammable, or unknown gas release should be treated
+as a potential emergency.
+
+Gas detector alarms, unusual fumes, or other indications of a possible
+gas release should be treated according to the applicable site
+emergency procedure.
+
+Do not rely on smell to determine whether an area is safe.
+
+Immediate Safety Guidance:
+Notify the designated control room or emergency response team
+according to the applicable site procedure.
+
+Keep unauthorized and unprotected personnel away from the suspected
+release area.
+
+Follow applicable gas detection alarms and the site's approved
+evacuation or shelter instructions.
+
+Follow instructions from authorized emergency personnel.
+
+Do not deliberately approach the suspected release to identify the
+gas by smell.
+
+Gas Leak Intervention:
+Do not attempt to locate, stop, isolate, repair, or otherwise intervene
+in a hazardous gas release unless trained, authorized, properly
+equipped, and permitted by the applicable approved procedure.
+
+Respiratory Protection:
+Respiratory protective equipment should only be selected and used
+according to the applicable hazard assessment, respiratory-protection
+program, chemical information, and site procedure.
+
+Specialized respiratory protective equipment should only be used by
+appropriately trained and authorized personnel.
+
+Avoid:
+Do not enter or deliberately approach a suspected hazardous gas
+release area without the required authorization and protection.
+
+Do not attempt to identify an unknown gas by smelling it.
+
+Do not attempt to stop, isolate, or repair a hazardous gas leak based
+only on this general guidance.
+
+Do not assume that an area is safe simply because no smell is present.
+
+Do not select respiratory protective equipment solely from this
+general guidance.
+
+Escalation:
+A suspected hazardous gas release should be reported to the designated
+control room or emergency response team according to the applicable
+site procedure.
+
+Follow the site's applicable evacuation, shelter, emergency response,
+and re-entry instructions.
+
+Chemical Information:
+When the released substance is known, the applicable chemical-specific
+Safety Data Sheet and approved emergency procedure should be consulted.
+
+Limitations:
+This document does not provide:
+
+- chemical-specific exposure limits
+- gas detector alarm settings
+- safe concentration limits
+- plant-specific evacuation routes
+- plant-specific shelter locations
+- emergency phone numbers
+- valve or isolation locations
+- leak isolation steps
+- repair procedures
+- respiratory equipment selection
+- respirator cartridge selection
+- plant-specific PPE requirements
+- chemical-specific first-aid instructions
+
+If this information is requested, the available general safety
+guidance does not provide enough information for that action.
+
+Important:
+This is general industrial safety guidance.
+
+It is not an official NTPC SOP, plant-specific gas-release procedure,
+or chemical-specific Safety Data Sheet.
+
+The applicable chemical-specific SDS, site-approved gas-release
+emergency procedure, and instructions from authorized emergency
+personnel always take priority.

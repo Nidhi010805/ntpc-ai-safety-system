@@ -1,0 +1,96 @@
+Document: General Work at Height Safety Guidance
+Document Type: General Industrial Safety Guidance
+Plant Specific: NO
+Official NTPC SOP: NO
+
+Scope:
+General safety guidance for work where a person could fall and
+sustain injury.
+
+Keywords:
+height, work at height, fall, falling, harness, ladder, scaffold,
+scaffolding, roof, platform, guardrail, lifeline, anchorage,
+fall protection, elevated work
+
+Hazard Recognition:
+Work at height may expose personnel to falls, falling objects,
+unstable access equipment, unsuitable working platforms, or other
+serious hazards.
+
+Immediate Safety Guidance:
+Work at height should be properly planned, risk assessed, supervised,
+and performed by competent personnel according to the applicable
+site procedure.
+
+Use suitable working platforms, guardrails, scaffolds, ladders, or
+fall-protection systems according to the task, hazard assessment,
+and applicable approved procedure.
+
+Inspect required fall-protection and access equipment before use
+according to applicable requirements.
+
+Where required by the applicable hazard assessment or procedure,
+use an approved full-body harness and compatible fall-protection
+system.
+
+Control the area below height work when falling objects may create
+a hazard.
+
+Weather and environmental conditions should be considered before
+and during work at height according to the applicable procedure.
+
+Unsafe Condition:
+If required fall protection is missing, damaged, unsuitable, or
+incorrectly used, the affected work should not begin or continue
+until the applicable safety requirements are satisfied.
+
+Report unsafe ladders, scaffolds, platforms, guardrails, harnesses,
+connectors, lifelines, or other fall-protection equipment according
+to the applicable site procedure.
+
+Avoid:
+Do not use visibly damaged ladders, scaffolds, harnesses, connectors,
+lifelines, or working platforms.
+
+Do not improvise unsafe working platforms or access arrangements.
+
+Do not intentionally bypass required fall-protection controls.
+
+Do not perform work at height without required authorization,
+planning, supervision, or safety controls.
+
+Do not select an anchorage point, lifeline configuration, or
+fall-arrest arrangement solely from this general guidance.
+
+Escalation:
+Missing or damaged fall protection, unsafe access equipment,
+uncontrolled falling-object hazards, or other unsafe height-work
+conditions should be reported to the appropriate supervisor or
+safety personnel according to the applicable site procedure.
+
+Limitations:
+This document does not provide:
+
+- plant-specific work-at-height permit requirements
+- minimum height thresholds for a specific site
+- anchorage point selection
+- anchorage strength calculations
+- lifeline design
+- fall-clearance calculations
+- scaffold erection instructions
+- ladder setup dimensions
+- rescue-from-height procedures
+- plant-specific PPE requirements
+
+If this information is requested, the available general safety
+guidance does not provide enough information for that action.
+
+Important:
+This is general industrial safety guidance.
+
+It is not an official NTPC SOP and is not a plant-specific
+work-at-height procedure.
+
+Applicable permit-to-work requirements, hazard assessments,
+work-at-height procedures, equipment instructions, and directions
+from authorized personnel always take priority.

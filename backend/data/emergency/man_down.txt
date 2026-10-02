@@ -1,0 +1,106 @@
+Document: General Man Down and Medical Emergency Guidance
+Document Type: General Industrial Safety Guidance
+Plant Specific: NO
+Official NTPC SOP: NO
+Medical Protocol: NO
+
+Scope:
+General first-response safety guidance for an injured, collapsed,
+unresponsive, or otherwise potentially seriously ill person in an
+industrial environment.
+
+Keywords:
+man down, worker down, unconscious, unresponsive, injured, injury,
+collapse, collapsed, bleeding, medical emergency, casualty,
+first aid, cpr, rescue
+
+Immediate Safety Guidance:
+Immediately notify the site's designated emergency or medical response
+service according to the applicable site procedure.
+
+Before approaching the casualty, consider whether hazards such as
+electricity, fire, smoke, toxic gas, chemicals, moving machinery,
+traffic, work at height, confined spaces, or structural hazards may
+make the area unsafe.
+
+Do not enter an unsafe or uncontrolled hazardous area to reach a
+casualty.
+
+If the area is safe, provide assistance only within the limits of your
+training and according to the applicable site emergency or medical
+procedure.
+
+First Aid:
+First aid and CPR should be provided by appropriately trained personnel
+according to their current training and the applicable site procedure.
+
+This general guidance does not provide medical diagnosis, CPR
+instructions, medication instructions, or injury-specific treatment
+steps.
+
+Casualty Movement:
+Do not unnecessarily move an injured or collapsed person.
+
+Movement should only occur when required by an immediate danger or
+when directed by appropriately trained or authorized responders,
+according to the applicable emergency procedure.
+
+Information for Responders:
+Provide responders with available information about:
+
+- the incident
+- the casualty's location
+- known or suspected hazards
+- observed events or conditions
+- relevant exposure information if known
+
+Do not place yourself at additional risk while obtaining this
+information.
+
+Avoid:
+Do not enter an unsafe area to perform an unauthorized rescue.
+
+Do not perform medical procedures beyond your training.
+
+Do not provide medication or medical treatment based solely on this
+general guidance.
+
+Do not unnecessarily move the casualty.
+
+Do not expose additional personnel to electrical, fire, gas, chemical,
+machinery, confined-space, height, or other hazards while attempting
+to help.
+
+Escalation:
+Notify the designated emergency or medical response service according
+to the applicable site procedure.
+
+Qualified medical and emergency responders should take over as soon
+as available.
+
+Limitations:
+This document does not provide:
+
+- medical diagnosis
+- detailed CPR instructions
+- medication instructions
+- injury-specific treatment
+- plant-specific emergency phone numbers
+- ambulance contact details
+- rescue entry procedures
+- electrical rescue procedures
+- confined-space rescue procedures
+- chemical-specific medical treatment
+
+If this information is requested, the available general safety
+guidance does not provide enough information for that action.
+
+Important:
+This is general industrial safety guidance.
+
+It is not an official NTPC medical procedure, first-aid protocol,
+or plant-specific emergency response procedure.
+
+Applicable site emergency procedures, current first-aid training,
+medical protocols, and instructions from qualified emergency or
+medical responders always take priority.
