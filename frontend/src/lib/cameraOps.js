@@ -40,6 +40,29 @@ export function fileStamp(date = new Date()) {
 export const clockTime = (date = new Date()) =>
   `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 
+let fullscreenWanted = false
+
+// The whole document goes fullscreen (not just the viewer) so page-level layers like toasts stay visible.
+// Must be called inside a user gesture; if the browser refuses, the viewer still covers the window.
+export function enterDocumentFullscreen() {
+  fullscreenWanted = true
+  const root = document.documentElement
+  if (!document.fullscreenEnabled || document.fullscreenElement || !root.requestFullscreen) return
+
+  root
+    .requestFullscreen({ navigationUI: 'hide' })
+    .then(() => {
+      // The viewer was closed before the browser finished switching.
+      if (!fullscreenWanted) exitDocumentFullscreen()
+    })
+    .catch(() => {})
+}
+
+export function exitDocumentFullscreen() {
+  fullscreenWanted = false
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+}
+
 export function downloadBlob(blob, fileName) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
