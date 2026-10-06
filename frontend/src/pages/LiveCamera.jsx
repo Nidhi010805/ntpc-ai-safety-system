@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -13,8 +14,12 @@ import {
   CheckCircle2,
   Circle,
   Download,
+  Eye,
+  EyeOff,
   Grid2X2,
   List,
+  Maximize,
+  Minimize,
   RefreshCw,
   Save,
   Search,
@@ -34,6 +39,8 @@ import {
   clamp,
   clockTime,
   downloadCsv,
+  enterDocumentFullscreen,
+  exitDocumentFullscreen,
   fileStamp,
   ptzView,
   round1,
@@ -617,6 +624,8 @@ export default function LiveCamera() {
   const [area, setArea] = useState('all')
   const [view, setView] = useState('grid')
   const [selectedCamera, setSelectedCamera] = useState(null)
+  // Where the fullscreen viewer was opened from ('grid' | 'details'), so exit returns there.
+  const [fullscreenFrom, setFullscreenFrom] = useState(null)
   const [ops, setOps] = useState({})
   const [toast, setToast] = useState(null)
   const toastTimer = useRef(null)
@@ -663,6 +672,25 @@ export default function LiveCamera() {
   useLayoutEffect(() => {
     window.scrollTo(0, selectedCamera ? 0 : gridScroll.current)
   }, [selectedCamera])
+
+  useEffect(() => exitDocumentFullscreen, [])
+
+  const openFullscreenFromGrid = (camera) => {
+    enterDocumentFullscreen()
+    openCamera(camera)
+    setFullscreenFrom('grid')
+  }
+
+  const enterFullscreen = () => {
+    enterDocumentFullscreen()
+    setFullscreenFrom('details')
+  }
+
+  const exitFullscreen = () => {
+    exitDocumentFullscreen()
+    if (fullscreenFrom === 'grid') setSelectedCamera(null)
+    setFullscreenFrom(null)
+  }
 
   const openAtPosition = (camera, presetIndex) => {
     updateOps(camera.id, (current) => ({
@@ -803,6 +831,9 @@ export default function LiveCamera() {
           onSnapshot={(showBoxes) => snapshot(selectedCamera, 16 / 9, showBoxes)}
           onDispatch={() => dispatchTeam(selectedCamera)}
           notify={notify}
+          fullscreen={fullscreenFrom !== null}
+          onEnterFullscreen={enterFullscreen}
+          onExitFullscreen={exitFullscreen}
           onBack={() => setSelectedCamera(null)}
         />
         {toastNode}
@@ -1019,6 +1050,7 @@ export default function LiveCamera() {
                   camera={camera}
                   ops={opsFor(camera)}
                   onOpen={() => openCamera(camera)}
+                  onFullscreen={() => openFullscreenFromGrid(camera)}
                   onOpenAt={(presetIndex) => openAtPosition(camera, presetIndex)}
                   onSnapshot={() => snapshot(camera, 16 / 8.5, true)}
                   onDispatch={() => dispatchTeam(camera)}
@@ -1056,6 +1088,7 @@ function CameraCard({
   camera,
   ops,
   onOpen,
+  onFullscreen,
   onOpenAt,
   onSnapshot,
   onDispatch,
@@ -1093,9 +1126,6 @@ function CameraCard({
     ALERT_META[camera.status] ||
     ALERT_META.safe
 
-  const image = imageFor(camera)
-  const blur = focusBlur(ops.focus)
-
   const choosePreset = (presetIndex) => {
     setPresetMenuOpen(false)
     onOpenAt(presetIndex)
@@ -1129,60 +1159,64 @@ function CameraCard({
           </p>
         </button>
       ) : (
-        <button
-          type="button"
-          onClick={onOpen}
-          aria-label={`View ${camera.id} live`}
-          className="group relative block aspect-[16/8.5] w-full overflow-hidden bg-[#172536]"
-        >
-          <div
-            className="absolute inset-0"
-            style={{ transform: viewTransform(ptzView(ops.ptz, ops.home)) }}
+        <div className="relative aspect-[16/8.5] overflow-hidden bg-[#172536]">
+          <button
+            type="button"
+            onClick={onOpen}
+            aria-label={`View ${camera.id} live`}
+            className="group absolute inset-0 block h-full w-full"
           >
-            <img
-              src={image}
-              alt={camera.location}
-              crossOrigin="anonymous"
-              className="h-full w-full object-cover"
-              style={blur ? { filter: `blur(${blur}px)` } : undefined}
+            <CameraFrame
+              camera={camera}
+              ptz={ops.ptz}
+              home={ops.home}
+              blur={focusBlur(ops.focus)}
+              overlayMode="boxes"
+              crosshair={false}
             />
 
-            {alert && (
-              <DetectionOverlay status={camera.status} />
-            )}
-          </div>
+            <div className="absolute left-2 top-2 flex gap-1">
+              <span
+                className={`rounded px-1.5 py-0.5 text-[6px] font-bold text-white ${
+                  camera.status === 'critical'
+                    ? 'bg-[#ba1a1a]'
+                    : 'bg-[#009b69]'
+                }`}
+              >
+                {camera.status === 'critical'
+                  ? 'ALARM ACTIVE'
+                  : '● LIVE'}
+              </span>
 
-          <div className="absolute left-2 top-2 flex gap-1">
-            <span
-              className={`rounded px-1.5 py-0.5 text-[6px] font-bold text-white ${
-                camera.status === 'critical'
-                  ? 'bg-[#ba1a1a]'
-                  : 'bg-[#009b69]'
-              }`}
-            >
-              {camera.status === 'critical'
-                ? 'ALARM ACTIVE'
-                : '● LIVE'}
+              <span className="rounded bg-black/65 px-1.5 py-0.5 text-[6px] font-semibold text-white">
+                PTZ
+              </span>
+            </div>
+
+            <span className="absolute right-2 top-2 rounded bg-black/65 px-1.5 py-0.5 font-mono text-[6px] text-white">
+              25 FPS • 1080p
             </span>
 
-            <span className="rounded bg-black/65 px-1.5 py-0.5 text-[6px] font-semibold text-white">
-              PTZ
+            <span className="absolute bottom-2 left-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[5.5px] text-white">
+              LIVE STREAM
+              {ops.activePreset !== null && ` · PRESET ${ops.activePreset + 1}`}
             </span>
-          </div>
 
-          <span className="absolute right-2 top-2 rounded bg-black/65 px-1.5 py-0.5 font-mono text-[6px] text-white">
-            25 FPS • 1080p
-          </span>
+            <span className="absolute inset-0 grid place-items-center bg-black/0 text-[8px] font-bold uppercase tracking-[0.08em] text-transparent transition-colors group-hover:bg-black/35 group-hover:text-white">
+              Open Live View & PTZ
+            </span>
+          </button>
 
-          <span className="absolute bottom-2 left-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[5.5px] text-white">
-            LIVE STREAM
-            {ops.activePreset !== null && ` · PRESET ${ops.activePreset + 1}`}
-          </span>
-
-          <span className="absolute inset-0 grid place-items-center bg-black/0 text-[8px] font-bold uppercase tracking-[0.08em] text-transparent transition-colors group-hover:bg-black/35 group-hover:text-white">
-            Open Live View & PTZ
-          </span>
-        </button>
+          <button
+            type="button"
+            onClick={onFullscreen}
+            aria-label={`View ${camera.id} fullscreen`}
+            title="Fullscreen"
+            className="absolute bottom-2 right-2 grid h-6 w-6 place-items-center rounded-md bg-black/60 text-white transition hover:bg-[#00288e]"
+          >
+            <Maximize className="h-3.5 w-3.5" />
+          </button>
+        </div>
       )}
 
       <div className="p-3">
@@ -1326,7 +1360,74 @@ function CameraCard({
   )
 }
 
-function DetectionOverlay({ status }) {
+// The camera image at the current PTZ position, with focus blur and AI overlays.
+// Fills its positioned parent; used by the grid, the details view and fullscreen.
+function CameraFrame({
+  camera,
+  ptz,
+  home,
+  blur = 0,
+  overlayMode = 'all',
+  motionDuration = 0,
+  audioOn = false,
+  crosshair = true,
+  large = false,
+}) {
+  const showBoxes = overlayMode === 'all' || overlayMode === 'boxes'
+  const showHeatmap = overlayMode === 'all' || overlayMode === 'heatmap'
+  const mediaStyle = {
+    filter: blur > 0 ? `blur(${blur}px)` : 'none',
+    transition: 'filter 350ms ease-out',
+  }
+
+  return (
+    <>
+      <div
+        className="absolute inset-0"
+        style={{
+          transform: viewTransform(ptzView(ptz, home)),
+          transition: motionDuration ? `transform ${motionDuration}ms ease-out` : undefined,
+        }}
+      >
+        {camera.streamUrl ? (
+          <video
+            src={camera.streamUrl}
+            autoPlay
+            loop
+            muted={!audioOn}
+            playsInline
+            className="h-full w-full object-cover"
+            style={mediaStyle}
+          />
+        ) : (
+          <img
+            src={imageFor(camera)}
+            alt={camera.location}
+            crossOrigin="anonymous"
+            className="h-full w-full object-cover"
+            style={mediaStyle}
+          />
+        )}
+
+        {showHeatmap && <HeatmapOverlay status={camera.status} />}
+        {showBoxes && <DetectionOverlay status={camera.status} large={large} />}
+      </div>
+
+      {crosshair && overlayMode !== 'clean' && (
+        <div
+          className={`pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 ${
+            large ? 'h-10 w-10' : 'h-6 w-6'
+          }`}
+        >
+          <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-white/60" />
+          <span className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-white/60" />
+        </div>
+      )}
+    </>
+  )
+}
+
+function DetectionOverlay({ status, large = false }) {
   const box = DETECTIONS[status]
   if (!box) return null
 
@@ -1343,7 +1444,9 @@ function DetectionOverlay({ status }) {
       }}
     >
       <span
-        className="absolute -top-[17px] left-0 whitespace-nowrap px-1.5 py-0.5 text-[6px] font-bold text-white"
+        className={`absolute bottom-full left-0 mb-1 whitespace-nowrap px-1.5 py-0.5 font-bold text-white ${
+          large ? 'text-[11px]' : 'text-[6px]'
+        }`}
         style={{ backgroundColor: box.labelBg }}
       >
         {box.label}
@@ -1675,6 +1778,9 @@ function CameraDetails({
   onSnapshot,
   onDispatch,
   notify,
+  fullscreen,
+  onEnterFullscreen,
+  onExitFullscreen,
   onBack,
 }) {
   const navigate = useNavigate()
@@ -1712,11 +1818,9 @@ function CameraDetails({
     camera.status === 'critical' ||
     camera.status === 'medium'
 
-  const image = imageFor(camera)
   const { ptz, home, focus } = ops
   const blur = focusing ? 2.5 : focusBlur(focus)
   const showBoxes = overlayMode === 'all' || overlayMode === 'boxes'
-  const showHeatmap = overlayMode === 'all' || overlayMode === 'heatmap'
   const recElapsed = recordingSince
     ? Math.max(0, Math.floor((now - recordingSince) / 1000))
     : 0
@@ -1874,6 +1978,31 @@ function CameraDetails({
     notify('Hazard reported', `${reference} filed for ${camera.id}`)
   }
 
+  // toggleRecording goes to the viewer as its own prop: the purity lint can't tell
+  // a function inside an object only runs on click (it calls Date.now).
+  const viewerControls = {
+    speed: ptzSpeed,
+    setSpeed: setPtzSpeed,
+    step,
+    hold,
+    nudge,
+    zoomBy,
+    goHome: () => goTo(home, 'HOME'),
+    recallPreset,
+    savePreset,
+    focusing,
+    autoFocus,
+    manualFocus,
+    overlayMode,
+    setOverlayMode,
+    snapshotBusy,
+    snapshot: handleSnapshot,
+    recording: Boolean(recordingSince),
+    recElapsed,
+    audioOn,
+    toggleAudio,
+  }
+
   const modules = [
     ['Fire / Smoke', 'Thermal and optical smoke monitoring active', camera.status === 'critical' ? 'TRIGGERED' : 'SAFE'],
     ['Helmet PPE', 'Mandatory hardhat compliance active', 'SAFE'],
@@ -1962,7 +2091,10 @@ function CameraDetails({
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-12">
         <div className="space-y-4 xl:col-span-8">
           <div className="overflow-hidden rounded-xl bg-white shadow-[0_1px_8px_rgba(15,35,70,0.06)]">
-            <div className="relative aspect-video overflow-hidden bg-[#101828]">
+            <div
+              className="relative aspect-video select-none overflow-hidden bg-[#101828]"
+              onDoubleClick={offline ? undefined : onEnterFullscreen}
+            >
               {offline ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#182536] text-white">
                   <WifiOff className="h-12 w-12 text-[#8291a7]" />
@@ -1972,47 +2104,22 @@ function CameraDetails({
                   </p>
                 </div>
               ) : (
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    transform: viewTransform(ptzView(ptz, home)),
-                    transition: `transform ${motion.duration}ms ease-out`,
-                  }}
-                >
-                  {camera.streamUrl ? (
-                    <video
-                      src={camera.streamUrl}
-                      autoPlay
-                      loop
-                      muted={!audioOn}
-                      playsInline
-                      className="h-full w-full object-cover"
-                      style={{ filter: `blur(${blur}px)`, transition: 'filter 350ms ease-out' }}
-                    />
-                  ) : (
-                    <img
-                      src={image}
-                      alt={camera.location}
-                      crossOrigin="anonymous"
-                      className="h-full w-full object-cover"
-                      style={{ filter: `blur(${blur}px)`, transition: 'filter 350ms ease-out' }}
-                    />
-                  )}
-
-                  {showHeatmap && <HeatmapOverlay status={camera.status} />}
-                  {showBoxes && isAlert && <DetectionOverlay status={camera.status} />}
-                </div>
+                // The fullscreen viewer draws the frame while open, so a real stream never plays twice.
+                !fullscreen && (
+                  <CameraFrame
+                    camera={camera}
+                    ptz={ptz}
+                    home={home}
+                    blur={blur}
+                    overlayMode={overlayMode}
+                    motionDuration={motion.duration}
+                    audioOn={audioOn}
+                  />
+                )
               )}
 
               {!offline && (
                 <>
-                  {overlayMode !== 'clean' && (
-                    <div className="pointer-events-none absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2">
-                      <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-white/60" />
-                      <span className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-white/60" />
-                    </div>
-                  )}
-
                   <div className="absolute left-3 top-3 flex items-center gap-1.5">
                     <span className="rounded bg-[#ba1a1a] px-2 py-1 text-[7px] font-bold text-white">
                       ● REC
@@ -2114,11 +2221,23 @@ function CameraDetails({
                 </span>
               </div>
 
-              {!offline && (
-                <span className="rounded bg-[#ba1a1a] px-2 py-1 text-[6px] font-bold text-white">
-                  LIVE
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onEnterFullscreen}
+                  disabled={offline}
+                  title="Fullscreen (or double-click the video)"
+                  className="flex items-center gap-1 rounded-md bg-[#00288e] px-2.5 py-1.5 text-[7px] font-bold text-white transition hover:bg-[#001f6e] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Maximize className="h-3 w-3" />
+                  Fullscreen
+                </button>
+
+                {!offline && (
+                  <span className="rounded bg-[#ba1a1a] px-2 py-1 text-[6px] font-bold text-white">
+                    LIVE
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-1.5 border-t border-[#edf1f7] px-3 py-2">
@@ -2509,7 +2628,469 @@ function CameraDetails({
           </section>
         </aside>
       </section>
+
+      {fullscreen && !offline && (
+        <FullscreenViewer
+          camera={camera}
+          ops={ops}
+          motion={motion}
+          blur={blur}
+          controls={viewerControls}
+          onToggleRecording={toggleRecording}
+          onExit={onExitFullscreen}
+        />
+      )}
     </div>
+  )
+}
+
+const KEY_MOVES = {
+  ArrowLeft: { pan: -1, tilt: 0 },
+  ArrowRight: { pan: 1, tilt: 0 },
+  ArrowUp: { pan: 0, tilt: 1 },
+  ArrowDown: { pan: 0, tilt: -1 },
+  '+': { zoom: 1 },
+  '=': { zoom: 1 },
+  '-': { zoom: -1 },
+  _: { zoom: -1 },
+}
+
+const presetShortName = (preset) => preset.name.replace(/^Preset \d+:\s*/, '')
+
+function FullscreenViewer({
+  camera,
+  ops,
+  motion,
+  blur,
+  controls,
+  onToggleRecording,
+  onExit,
+}) {
+  const [controlsVisible, setControlsVisible] = useState(true)
+  const rootRef = useRef(null)
+  const lastKeyMove = useRef(0)
+  const { ptz, focus } = ops
+  const { hold, nudge, zoomBy } = controls
+  const detection = DETECTIONS[camera.status]
+    ? ALERT_META[camera.status].detection
+    : null
+
+  // Lock the page scroll behind the viewer and move focus into it; restore both on close.
+  useEffect(() => {
+    const root = document.documentElement
+    const previousOverflow = root.style.overflow
+    const opener = document.activeElement
+    root.style.overflow = 'hidden'
+    rootRef.current?.focus({ preventScroll: true })
+
+    return () => {
+      root.style.overflow = previousOverflow
+      if (opener instanceof HTMLElement && opener.isConnected) {
+        opener.focus({ preventScroll: true })
+      }
+    }
+  }, [])
+
+  // Esc or the browser's own exit control left fullscreen: close the viewer with it.
+  const onFullscreenChange = useEffectEvent(() => {
+    if (!document.fullscreenElement) onExit()
+  })
+
+  const onKeyDown = useEffectEvent((event) => {
+    if (event.ctrlKey || event.metaKey || event.altKey) return
+
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      onExit()
+      return
+    }
+
+    // A focused slider keeps its own arrow-key behaviour.
+    if (event.target instanceof Element && event.target.closest('input, select, textarea')) return
+
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
+    const move = KEY_MOVES[key]
+
+    if (move) {
+      event.preventDefault()
+      // Held keys repeat at the OS rate; pace them like a held on-screen button.
+      if (event.repeat && event.timeStamp - lastKeyMove.current < HOLD_INTERVAL) return
+      lastKeyMove.current = event.timeStamp
+      if (move.zoom) zoomBy(move.zoom)
+      else nudge(move.pan, move.tilt)
+      return
+    }
+
+    if (event.repeat) return
+
+    const presetIndex = Number(key) - 1
+
+    if (key === 'h' || key === 'Home') controls.goHome()
+    else if (key === 'c') setControlsVisible((visible) => !visible)
+    else if (Number.isInteger(presetIndex) && presetIndex >= 0 && presetIndex < ops.presets.length) {
+      controls.recallPreset(presetIndex)
+    } else return
+
+    event.preventDefault()
+  })
+
+  useEffect(() => {
+    const handleFullscreenChange = () => onFullscreenChange()
+    const handleKeyDown = (event) => onKeyDown(event)
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
+
+  return (
+    <div
+      ref={rootRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${camera.id} fullscreen live view`}
+      tabIndex={-1}
+      className="fixed inset-0 z-[300] flex select-none items-center justify-center bg-black text-white outline-none"
+    >
+      <div
+        className="relative aspect-video overflow-hidden bg-[#101828]"
+        style={{ width: 'min(100vw, calc(100dvh * 16 / 9))' }}
+        onDoubleClick={onExit}
+      >
+        <CameraFrame
+          camera={camera}
+          ptz={ptz}
+          home={ops.home}
+          blur={blur}
+          overlayMode={controls.overlayMode}
+          motionDuration={motion.duration}
+          audioOn={controls.audioOn}
+          large
+        />
+      </div>
+
+      {motion.label && (
+        <span className="pointer-events-none absolute left-1/2 top-28 -translate-x-1/2 rounded-md bg-[#00288e]/90 px-3 py-1.5 font-mono text-[11px] font-bold">
+          PTZ MOVING → {motion.label}
+        </span>
+      )}
+
+      {controlsVisible ? (
+        <>
+          <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-3 bg-gradient-to-b from-black/80 via-black/45 to-transparent px-5 pb-12 pt-4">
+            <div className="pointer-events-auto flex min-w-0 items-start gap-3">
+              <span className="shrink-0 rounded-md bg-[#00288e] px-2 py-1 text-[11px] font-bold">
+                {camera.id}
+              </span>
+
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-[14px] font-bold leading-tight">
+                    {camera.location}
+                  </h2>
+                  <StatusBadge status={camera.status} />
+                </div>
+
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-semibold text-white/75">
+                  <span className="flex items-center gap-1.5 text-[#5ee6a8]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#00c47f]" />
+                    LIVE · 25 FPS · 1080p
+                  </span>
+
+                  <span className="font-mono">
+                    AZ {ptz.pan.toFixed(1)}° · EL {ptz.tilt.toFixed(1)}° · ZOOM {ptz.zoom.toFixed(1)}X
+                  </span>
+
+                  {controls.recording && (
+                    <span className="animate-pulse rounded bg-[#ba1a1a] px-1.5 py-0.5 font-mono text-white">
+                      ● CLIP {formatDuration(controls.recElapsed)}
+                    </span>
+                  )}
+
+                  {controls.audioOn && (
+                    <span className="flex items-center gap-1">
+                      <Volume2 className="h-3 w-3" /> AUDIO
+                    </span>
+                  )}
+                </div>
+
+                {detection && (
+                  <p className="mt-1 text-[10px] font-bold text-[#ff9b8f]">
+                    AI: {detection}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="pointer-events-auto flex flex-wrap items-center gap-2">
+              <div
+                role="group"
+                aria-label="Video overlays"
+                className="flex rounded-lg bg-white/10 p-0.5"
+              >
+                {OVERLAY_MODES.map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => controls.setOverlayMode(mode)}
+                    aria-pressed={controls.overlayMode === mode}
+                    className={`rounded-md px-2.5 py-1 text-[10px] font-semibold transition ${
+                      controls.overlayMode === mode
+                        ? 'bg-white text-[#00288e]'
+                        : 'text-white/80 hover:bg-white/15'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <ViewerButton
+                label="Take snapshot"
+                onClick={controls.snapshot}
+                disabled={controls.snapshotBusy}
+              >
+                <Camera className="h-4 w-4" />
+              </ViewerButton>
+
+              <ViewerButton
+                label={controls.recording ? 'Stop clip recording' : 'Record clip'}
+                active={controls.recording}
+                aria-pressed={controls.recording}
+                onClick={onToggleRecording}
+              >
+                {controls.recording ? (
+                  <Square className="h-3.5 w-3.5 fill-current" />
+                ) : (
+                  <Circle className="h-3.5 w-3.5 fill-[#ff5c5c] text-[#ff5c5c]" />
+                )}
+              </ViewerButton>
+
+              <ViewerButton
+                label={controls.audioOn ? 'Mute audio' : 'Listen to audio'}
+                active={controls.audioOn}
+                aria-pressed={controls.audioOn}
+                onClick={controls.toggleAudio}
+              >
+                {controls.audioOn ? (
+                  <Volume2 className="h-4 w-4" />
+                ) : (
+                  <VolumeX className="h-4 w-4" />
+                )}
+              </ViewerButton>
+
+              <ViewerButton
+                label="Hide controls (C)"
+                onClick={() => setControlsVisible(false)}
+              >
+                <EyeOff className="h-4 w-4" />
+              </ViewerButton>
+
+              <button
+                type="button"
+                onClick={onExit}
+                className="flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-[11px] font-bold text-[#0b1c30] transition hover:bg-white/85"
+              >
+                <Minimize className="h-3.5 w-3.5" />
+                Exit fullscreen
+              </button>
+            </div>
+          </div>
+
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center gap-1.5 px-4 pb-4">
+            <div className="pointer-events-auto flex max-w-full flex-wrap items-start justify-center gap-x-6 gap-y-3 rounded-2xl border border-white/10 bg-black/65 px-5 py-3 shadow-2xl backdrop-blur-md">
+              <DockGroup label="Pan & Tilt">
+                <div className="grid grid-cols-3 gap-1">
+                  <span />
+                  <ViewerButton label="Tilt up" {...hold(() => nudge(0, 1))}>↑</ViewerButton>
+                  <span />
+                  <ViewerButton label="Pan left" {...hold(() => nudge(-1, 0))}>←</ViewerButton>
+                  <button
+                    type="button"
+                    onClick={controls.goHome}
+                    aria-label="Return to home position"
+                    title="Return to home position (H)"
+                    className="grid h-8 w-8 place-items-center rounded-full bg-[#00288e] text-[7px] font-bold transition hover:bg-[#1a44b8]"
+                  >
+                    HOME
+                  </button>
+                  <ViewerButton label="Pan right" {...hold(() => nudge(1, 0))}>→</ViewerButton>
+                  <span />
+                  <ViewerButton label="Tilt down" {...hold(() => nudge(0, -1))}>↓</ViewerButton>
+                  <span />
+                </div>
+              </DockGroup>
+
+              <DockGroup label="Zoom">
+                <div className="flex items-center gap-1.5">
+                  <ViewerButton
+                    label="Zoom out"
+                    disabled={ptz.zoom <= ZOOM_MIN}
+                    {...hold(() => zoomBy(-1), ptz.zoom <= ZOOM_MIN)}
+                  >
+                    −
+                  </ViewerButton>
+                  <span className="w-12 text-center font-mono text-[14px] font-bold">
+                    {ptz.zoom.toFixed(1)}x
+                  </span>
+                  <ViewerButton
+                    label="Zoom in"
+                    disabled={ptz.zoom >= ZOOM_MAX}
+                    {...hold(() => zoomBy(1), ptz.zoom >= ZOOM_MAX)}
+                  >
+                    +
+                  </ViewerButton>
+                </div>
+                <DockNote>Optical {ZOOM_MAX}x max</DockNote>
+              </DockGroup>
+
+              <DockGroup label={`Speed ${controls.speed}%`}>
+                {/* Mouse users get focus dropped after a drag, so arrow keys go back to pan/tilt. */}
+                <input
+                  type="range"
+                  min="10"
+                  max="100"
+                  value={controls.speed}
+                  onChange={(event) => controls.setSpeed(Number(event.target.value))}
+                  onPointerUp={(event) => event.currentTarget.blur()}
+                  aria-label="PTZ speed"
+                  className="mt-2 w-28 accent-white"
+                />
+                <DockNote>Step {controls.step.toFixed(1)}° per press</DockNote>
+              </DockGroup>
+
+              <DockGroup label="Focus">
+                <div className="flex gap-1">
+                  <ViewerButton
+                    label="Auto focus"
+                    active={focus.mode === 'auto'}
+                    aria-pressed={focus.mode === 'auto'}
+                    onClick={controls.autoFocus}
+                  >
+                    <span className="text-[11px]">AF</span>
+                  </ViewerButton>
+                  <ViewerButton label="Manual focus −" {...hold(() => controls.manualFocus(-1))}>
+                    −
+                  </ViewerButton>
+                  <ViewerButton label="Manual focus +" {...hold(() => controls.manualFocus(1))}>
+                    +
+                  </ViewerButton>
+                </div>
+                <DockNote>
+                  {focus.mode === 'auto'
+                    ? controls.focusing
+                      ? 'AF searching…'
+                      : 'AF locked'
+                    : `MF ${focus.value}% · sharpest at 50%`}
+                </DockNote>
+              </DockGroup>
+
+              <DockGroup label="Presets">
+                <div className="grid grid-cols-2 gap-1">
+                  {ops.presets.map((preset, index) => {
+                    const active = ops.activePreset === index
+
+                    return (
+                      <div key={preset.name} className="flex gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => controls.recallPreset(index)}
+                          aria-label={preset.name}
+                          title={`${preset.name} · ${describePosition(preset.position)}`}
+                          className={`flex h-7 w-[180px] items-center gap-1.5 rounded-md px-2 text-left text-[10px] font-semibold transition ${
+                            active
+                              ? 'bg-white text-[#00288e]'
+                              : 'bg-white/10 hover:bg-white/20'
+                          }`}
+                        >
+                          <span
+                            className={`grid h-4 w-4 shrink-0 place-items-center rounded font-mono text-[9px] font-bold ${
+                              active ? 'bg-[#00288e] text-white' : 'bg-white/20'
+                            }`}
+                          >
+                            {index + 1}
+                          </span>
+                          <span className="truncate">{presetShortName(preset)}</span>
+                        </button>
+
+                        <ViewerButton
+                          label={`Save current view to ${preset.name}`}
+                          size="sm"
+                          onClick={() => controls.savePreset(index)}
+                        >
+                          <Save className="h-3 w-3" />
+                        </ViewerButton>
+                      </div>
+                    )
+                  })}
+                </div>
+              </DockGroup>
+            </div>
+
+            <p className="hidden rounded-full bg-black/55 px-3 py-0.5 text-[10px] font-medium text-white/75 backdrop-blur md:block">
+              ← ↑ → ↓ pan / tilt · + / − zoom · H home · 1–4 presets · C hide controls · Esc exit
+            </p>
+          </div>
+        </>
+      ) : (
+        <div className="absolute right-4 top-4 flex gap-1 rounded-xl bg-black/60 p-1 backdrop-blur">
+          <button
+            type="button"
+            onClick={() => setControlsVisible(true)}
+            className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-bold transition hover:bg-white/15"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Show controls
+          </button>
+
+          <ViewerButton label="Exit fullscreen" onClick={onExit}>
+            <Minimize className="h-4 w-4" />
+          </ViewerButton>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ViewerButton({ label, active = false, size = 'md', children, ...props }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className={`grid touch-none select-none place-items-center rounded-lg font-bold transition disabled:cursor-not-allowed disabled:opacity-35 ${
+        size === 'sm' ? 'h-7 w-7 text-[11px]' : 'h-8 min-w-8 px-2 text-[14px]'
+      } ${
+        active
+          ? 'bg-white text-[#00288e]'
+          : 'bg-white/10 text-white hover:bg-white/20'
+      }`}
+      {...props}
+    >
+      {children}
+    </button>
+  )
+}
+
+function DockGroup({ label, children }) {
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/55">
+        {label}
+      </p>
+      {children}
+    </div>
+  )
+}
+
+function DockNote({ children }) {
+  return (
+    <p className="text-[9px] font-medium text-white/60">
+      {children}
+    </p>
   )
 }
 
@@ -2629,7 +3210,7 @@ function Toast({ toast, onClose }) {
   return (
     <div
       role="status"
-      className="fixed right-5 top-20 z-[200] w-[350px] max-w-[calc(100%-40px)] rounded-xl border border-blue-100 bg-white p-4 shadow-2xl"
+      className="fixed right-5 top-20 z-[400] w-[350px] max-w-[calc(100%-40px)] rounded-xl border border-blue-100 bg-white p-4 shadow-2xl"
     >
       <div className="flex gap-3">
         <div
