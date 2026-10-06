@@ -23,6 +23,15 @@
   --color-danger-soft: #4A1620;
   --color-safe: #2ED573;
   --color-safe-soft: #143627;
+
+  /* Hard on/off blink, like a camera's REC indicator. */
+  --animate-rec-blink: rec-blink 1s steps(1, end) infinite;
+
+  @keyframes rec-blink {
+    50% {
+      opacity: 0;
+    }
+  }
 }
 
 html {
