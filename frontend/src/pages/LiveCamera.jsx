@@ -1,16 +1,45 @@
-import { useMemo, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
   Camera,
   CheckCircle2,
+  Circle,
   Download,
   Grid2X2,
   List,
   RefreshCw,
+  Save,
   Search,
+  Square,
   VideoOff,
+  Volume2,
+  VolumeX,
   WifiOff,
+  X,
 } from 'lucide-react'
+import {
+  TILT_MAX,
+  TILT_MIN,
+  ZOOM_MAX,
+  ZOOM_MIN,
+  captureSnapshot,
+  clamp,
+  clockTime,
+  downloadCsv,
+  fileStamp,
+  ptzView,
+  round1,
+  viewTransform,
+  wrapDegrees,
+} from '../lib/cameraOps'
 
 const makeCamera = (
   tenderNo,
@@ -443,12 +472,241 @@ const ALERT_META = {
   },
 }
 
+const CAMERA_INDEX = new Map(CAMERAS.map((camera, index) => [camera.id, index]))
+const CAMERA_BY_ID = new Map(CAMERAS.map((camera) => [camera.id, camera]))
+
+const imageFor = (camera) =>
+  CAMERA_IMAGES[(CAMERA_INDEX.get(camera.id) ?? 0) % CAMERA_IMAGES.length]
+
+// Box geometry is in % of the frame so the same data drives the overlay and the snapshot.
+const DETECTIONS = {
+  critical: {
+    left: 27, top: 22, width: 43, height: 50,
+    label: 'FIRE/SMOKE 99.4%',
+    border: '#ef4444', fill: 'rgba(239, 68, 68, 0.1)', labelBg: '#dc2626',
+  },
+  high: {
+    left: 53, top: 22, width: 29, height: 53,
+    label: 'RESTRICTED ZONE 98%',
+    border: '#f97316', fill: 'rgba(249, 115, 22, 0.1)', labelBg: '#f97316',
+  },
+  medium: {
+    left: 26, top: 28, width: 40, height: 38,
+    label: 'PPE / SAFETY ALERT',
+    border: '#eab308', fill: 'rgba(234, 179, 8, 0.1)', labelBg: '#c28b00',
+  },
+}
+
+const PRESET_TEMPLATES = [
+  { name: 'Conveyor Drive Motor', pan: -22, tilt: -6, zoom: 4 },
+  { name: 'Discharge Chute & Scraper', pan: 18, tilt: -12, zoom: 6 },
+  { name: 'Catwalk & Access Ladder', pan: 30, tilt: 8, zoom: 2.5 },
+  { name: 'Take-up Pulley Area', pan: -35, tilt: -4, zoom: 8 },
+]
+
+const homePosition = (camera) => ({
+  pan: wrapDegrees(camera.tenderNo * 47.3 + 12.5),
+  tilt: round1(-8 - ((camera.tenderNo * 3.7) % 14)),
+  zoom: 1,
+})
+
+const MAX_EVENTS = 12
+let eventSeq = 0
+
+function seedEvents(camera) {
+  const titles = {
+    critical: 'Fire / Smoke Detection',
+    high: 'Restricted Zone Entry',
+    medium: 'PPE Compliance Alert',
+  }
+
+  return [
+    {
+      id: `seed-${camera.id}-1`,
+      title: titles[camera.status] || 'Routine Camera Health Check',
+      time: '14:32:08',
+      text: `${camera.id} · ${camera.location}`,
+      sub: camera.status === 'safe' ? 'Status: Normal operation' : 'Safety event logged by edge AI',
+      severity: camera.status === 'safe' ? 'safe' : camera.status === 'medium' ? 'medium' : 'high',
+    },
+    {
+      id: `seed-${camera.id}-2`,
+      title: 'Shift Inspection Acknowledged',
+      time: '12:15:20',
+      text: 'Verified by Control Room Operator',
+      sub: 'Status: Safe Compliance',
+      severity: 'safe',
+    },
+    {
+      id: `seed-${camera.id}-3`,
+      title: 'Minor Dust Cloud Detected',
+      time: '09:40:11',
+      text: 'Transient plume during conveyor operation',
+      sub: 'Status: Auto-resolved',
+      severity: 'medium',
+    },
+    {
+      id: `seed-${camera.id}-4`,
+      title: 'Shift B Diagnostics Passed',
+      time: '06:00:00',
+      text: 'PTZ motor calibration, optical wiper & AI sync nominal',
+      sub: 'Status: 100% Operational',
+      severity: 'safe',
+    },
+  ]
+}
+
+const DEFAULT_OPS = new Map()
+
+// Per-camera operational state (PTZ position, presets, alert actions, event log).
+// Kept above the page views so a camera stays where the operator left it.
+function defaultOps(camera) {
+  if (!DEFAULT_OPS.has(camera.id)) {
+    const home = homePosition(camera)
+
+    DEFAULT_OPS.set(camera.id, {
+      home,
+      ptz: home,
+      focus: { mode: 'auto', value: 50 },
+      presets: PRESET_TEMPLATES.map((preset, index) => ({
+        name: `Preset ${index + 1}: ${preset.name}`,
+        position: {
+          pan: wrapDegrees(home.pan + preset.pan),
+          tilt: clamp(round1(home.tilt + preset.tilt), TILT_MIN, TILT_MAX),
+          zoom: preset.zoom,
+        },
+      })),
+      activePreset: null,
+      acknowledged: false,
+      dispatched: false,
+      hazardReported: false,
+      events: seedEvents(camera),
+    })
+  }
+
+  return DEFAULT_OPS.get(camera.id)
+}
+
+const focusBlur = (focus) =>
+  focus.mode === 'auto' ? 0 : Math.abs(focus.value - 50) / 10
+
+async function takeSnapshot({ camera, ops, aspect, showBoxes }) {
+  const detection = DETECTIONS[camera.status]
+  const fileName = `${camera.id}_${fileStamp()}.jpg`
+  const { pan, tilt, zoom } = ops.ptz
+
+  await captureSnapshot({
+    imageUrl: imageFor(camera),
+    aspect,
+    view: ptzView(ops.ptz, ops.home),
+    blurPx: focusBlur(ops.focus),
+    boxes: showBoxes && detection ? [detection] : [],
+    caption: {
+      left: `${camera.id} · ${camera.area}`,
+      right: `AZ ${pan.toFixed(1)}° EL ${tilt.toFixed(1)}° ${zoom.toFixed(1)}X · ${new Date().toLocaleString('en-GB')}`,
+    },
+    fileName,
+  })
+
+  return fileName
+}
+
 export default function LiveCamera() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [area, setArea] = useState('all')
   const [view, setView] = useState('grid')
   const [selectedCamera, setSelectedCamera] = useState(null)
+  const [ops, setOps] = useState({})
+  const [toast, setToast] = useState(null)
+  const toastTimer = useRef(null)
+  const gridScroll = useRef(0)
+
+  const opsFor = (camera) => ops[camera.id] ?? defaultOps(camera)
+
+  const updateOps = useCallback((id, change) => {
+    setOps((prev) => {
+      const current = prev[id] ?? defaultOps(CAMERA_BY_ID.get(id))
+      return { ...prev, [id]: { ...current, ...change(current) } }
+    })
+  }, [])
+
+  const logEvent = useCallback(
+    (id, event) => {
+      eventSeq += 1
+      const entry = {
+        id: `evt-${eventSeq}`,
+        time: clockTime(),
+        severity: 'safe',
+        ...event,
+      }
+      updateOps(id, (current) => ({
+        events: [entry, ...current.events].slice(0, MAX_EVENTS),
+      }))
+    },
+    [updateOps]
+  )
+
+  const notify = useCallback((title, message, tone = 'success') => {
+    clearTimeout(toastTimer.current)
+    setToast({ title, message, tone })
+    toastTimer.current = setTimeout(() => setToast(null), 3500)
+  }, [])
+
+  useEffect(() => () => clearTimeout(toastTimer.current), [])
+
+  const openCamera = (camera) => {
+    gridScroll.current = window.scrollY
+    setSelectedCamera(camera)
+  }
+
+  useLayoutEffect(() => {
+    window.scrollTo(0, selectedCamera ? 0 : gridScroll.current)
+  }, [selectedCamera])
+
+  const openAtPosition = (camera, presetIndex) => {
+    updateOps(camera.id, (current) => ({
+      ptz:
+        presetIndex === null
+          ? current.home
+          : current.presets[presetIndex].position,
+      activePreset: presetIndex,
+    }))
+    openCamera(camera)
+  }
+
+  const snapshot = async (camera, aspect, showBoxes) => {
+    try {
+      const fileName = await takeSnapshot({
+        camera,
+        ops: opsFor(camera),
+        aspect,
+        showBoxes,
+      })
+      logEvent(camera.id, {
+        title: 'Snapshot Captured',
+        text: fileName,
+        sub: 'Evidence image exported by operator',
+      })
+      notify('Snapshot saved', `${fileName} downloaded`)
+    } catch (error) {
+      notify('Snapshot failed', error.message, 'error')
+    }
+  }
+
+  const dispatchTeam = (camera) => {
+    updateOps(camera.id, () => ({ dispatched: true }))
+    logEvent(camera.id, {
+      title: 'Response Team Dispatched',
+      text: `${camera.id} · ${camera.location}`,
+      sub: 'Status: Field patrol en route',
+      severity: 'high',
+    })
+    notify(
+      'Response team dispatched',
+      `Field patrol en route to ${camera.id} · ${camera.area}`
+    )
+  }
 
   const areas = useMemo(
     () =>
@@ -487,17 +745,74 @@ export default function LiveCamera() {
     })
   }, [search, status, area])
 
+  const exportTelemetry = () => {
+    const header = [
+      'Tender No',
+      'Camera',
+      'Location',
+      'Type',
+      'Area of Interest',
+      'Mounting',
+      'Pole No',
+      'JB No',
+      'Status',
+      'Active Safety Detection',
+      'PTZ Azimuth (deg)',
+      'PTZ Elevation (deg)',
+      'Zoom (x)',
+    ]
+
+    const rows = filteredCameras.map((camera) => {
+      const { ptz } = opsFor(camera)
+
+      return [
+        camera.tenderNo,
+        camera.id,
+        camera.location,
+        camera.type,
+        camera.area,
+        camera.mounting,
+        camera.poleNo,
+        camera.jbNo ? `JB No: ${camera.jbNo}` : '',
+        camera.status.toUpperCase(),
+        (ALERT_META[camera.status] || ALERT_META.safe).detection,
+        ptz.pan.toFixed(1),
+        ptz.tilt.toFixed(1),
+        ptz.zoom.toFixed(1),
+      ]
+    })
+
+    const fileName = `camera-telemetry_${fileStamp()}.csv`
+    downloadCsv(fileName, header, rows)
+    notify('Telemetry exported', `${rows.length} cameras written to ${fileName}`)
+  }
+
+  const toastNode = (
+    <Toast toast={toast} onClose={() => setToast(null)} />
+  )
+
   if (selectedCamera) {
     return (
-      <CameraDetails
-        camera={selectedCamera}
-        onBack={() => setSelectedCamera(null)}
-      />
+      <>
+        <CameraDetails
+          key={selectedCamera.id}
+          camera={selectedCamera}
+          ops={opsFor(selectedCamera)}
+          onUpdate={(change) => updateOps(selectedCamera.id, change)}
+          onLog={(event) => logEvent(selectedCamera.id, event)}
+          onSnapshot={(showBoxes) => snapshot(selectedCamera, 16 / 9, showBoxes)}
+          onDispatch={() => dispatchTeam(selectedCamera)}
+          notify={notify}
+          onBack={() => setSelectedCamera(null)}
+        />
+        {toastNode}
+      </>
     )
   }
 
   return (
     <div className="w-full space-y-5">
+      {toastNode}
 
       {/* HEADER */}
       <section className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -698,16 +1013,17 @@ export default function LiveCamera() {
 
           {filteredCameras.length > 0 ? (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {filteredCameras.map(
-                (camera, index) => (
-                  <CameraCard
-                    key={camera.id}
-                    camera={camera}
-                    index={index}
-                    onOpen={() => setSelectedCamera(camera)}
-                  />
-                )
-              )}
+              {filteredCameras.map((camera) => (
+                <CameraCard
+                  key={camera.id}
+                  camera={camera}
+                  ops={opsFor(camera)}
+                  onOpen={() => openCamera(camera)}
+                  onOpenAt={(presetIndex) => openAtPosition(camera, presetIndex)}
+                  onSnapshot={() => snapshot(camera, 16 / 8.5, true)}
+                  onDispatch={() => dispatchTeam(camera)}
+                />
+              ))}
             </div>
           ) : (
             <div className="rounded-xl bg-white py-14 text-center shadow-sm">
@@ -725,15 +1041,12 @@ export default function LiveCamera() {
         </section>
       )}
 
-      {/* TABLE VIEW */}
-      {view === 'table' && (
-        <InventoryTable cameras={filteredCameras} onOpenCamera={setSelectedCamera} />
-      )}
-
-      {/* Bottom table always in grid mode */}
-      {view === 'grid' && (
-        <InventoryTable cameras={filteredCameras} onOpenCamera={setSelectedCamera} />
-      )}
+      {/* Inventory table: its own view, and also shown under the grid */}
+      <InventoryTable
+        cameras={filteredCameras}
+        onOpenCamera={openCamera}
+        onExport={exportTelemetry}
+      />
 
     </div>
   )
@@ -741,9 +1054,33 @@ export default function LiveCamera() {
 
 function CameraCard({
   camera,
-  index,
+  ops,
   onOpen,
+  onOpenAt,
+  onSnapshot,
+  onDispatch,
 }) {
+  const [presetMenuOpen, setPresetMenuOpen] = useState(false)
+  const actionsRef = useRef(null)
+
+  useEffect(() => {
+    if (!presetMenuOpen) return
+
+    const onPointer = (event) => {
+      if (!actionsRef.current?.contains(event.target)) setPresetMenuOpen(false)
+    }
+    const onKey = (event) => {
+      if (event.key === 'Escape') setPresetMenuOpen(false)
+    }
+
+    document.addEventListener('mousedown', onPointer)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onPointer)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [presetMenuOpen])
+
   const offline =
     camera.status === 'offline'
 
@@ -756,10 +1093,13 @@ function CameraCard({
     ALERT_META[camera.status] ||
     ALERT_META.safe
 
-  const image =
-    CAMERA_IMAGES[
-      index % CAMERA_IMAGES.length
-    ]
+  const image = imageFor(camera)
+  const blur = focusBlur(ops.focus)
+
+  const choosePreset = (presetIndex) => {
+    setPresetMenuOpen(false)
+    onOpenAt(presetIndex)
+  }
 
   return (
     <article
@@ -770,7 +1110,12 @@ function CameraCard({
       }`}
     >
       {offline ? (
-        <div className="flex aspect-[16/8.5] flex-col items-center justify-center bg-[#dbe8fb]">
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`Open ${camera.id} diagnostics`}
+          className="flex aspect-[16/8.5] w-full flex-col items-center justify-center bg-[#dbe8fb] transition hover:bg-[#d2e1f7]"
+        >
           <div className="grid h-10 w-10 place-items-center rounded-full bg-white/60">
             <WifiOff className="h-5 w-5 text-[#7890ad]" />
           </div>
@@ -782,14 +1127,30 @@ function CameraCard({
           <p className="mt-1 text-[7px] text-[#7d8da3]">
             RTSP signal unavailable
           </p>
-        </div>
+        </button>
       ) : (
-        <div className="relative aspect-[16/8.5] overflow-hidden bg-[#172536]">
-          <img
-            src={image}
-            alt={camera.location}
-            className="h-full w-full object-cover"
-          />
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`View ${camera.id} live`}
+          className="group relative block aspect-[16/8.5] w-full overflow-hidden bg-[#172536]"
+        >
+          <div
+            className="absolute inset-0"
+            style={{ transform: viewTransform(ptzView(ops.ptz, ops.home)) }}
+          >
+            <img
+              src={image}
+              alt={camera.location}
+              crossOrigin="anonymous"
+              className="h-full w-full object-cover"
+              style={blur ? { filter: `blur(${blur}px)` } : undefined}
+            />
+
+            {alert && (
+              <DetectionOverlay status={camera.status} />
+            )}
+          </div>
 
           <div className="absolute left-2 top-2 flex gap-1">
             <span
@@ -813,14 +1174,15 @@ function CameraCard({
             25 FPS • 1080p
           </span>
 
-          {alert && (
-            <DetectionOverlay status={camera.status} />
-          )}
-
           <span className="absolute bottom-2 left-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[5.5px] text-white">
             LIVE STREAM
+            {ops.activePreset !== null && ` · PRESET ${ops.activePreset + 1}`}
           </span>
-        </div>
+
+          <span className="absolute inset-0 grid place-items-center bg-black/0 text-[8px] font-bold uppercase tracking-[0.08em] text-transparent transition-colors group-hover:bg-black/35 group-hover:text-white">
+            Open Live View & PTZ
+          </span>
+        </button>
       )}
 
       <div className="p-3">
@@ -876,22 +1238,78 @@ function CameraCard({
         )}
 
         <div className="mt-3 flex items-center justify-between gap-2">
-          <div className="flex flex-wrap gap-1">
+          <div ref={actionsRef} className="relative flex flex-wrap gap-1">
             {!offline && (
               <>
-                <button className="rounded-md border border-[#dfe5ee] px-2 py-1 text-[6.5px] font-semibold text-[#536174]">
+                <button
+                  onClick={onSnapshot}
+                  className="rounded-md border border-[#dfe5ee] px-2 py-1 text-[6.5px] font-semibold text-[#536174] hover:bg-[#f7f9fc]"
+                >
                   Snapshot
                 </button>
 
-                <button className="rounded-md border border-[#dfe5ee] px-2 py-1 text-[6.5px] font-semibold text-[#536174]">
+                <button
+                  onClick={() => setPresetMenuOpen((open) => !open)}
+                  aria-haspopup="menu"
+                  aria-expanded={presetMenuOpen}
+                  className={`rounded-md border px-2 py-1 text-[6.5px] font-semibold ${
+                    presetMenuOpen
+                      ? 'border-[#c7d5f5] bg-[#eef3ff] text-[#00288e]'
+                      : 'border-[#dfe5ee] text-[#536174] hover:bg-[#f7f9fc]'
+                  }`}
+                >
                   PTZ Preset
                 </button>
+
+                {presetMenuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute bottom-full left-0 z-20 mb-1 w-[190px] rounded-lg border border-[#e3e8f0] bg-white p-1 shadow-[0_8px_24px_rgba(15,35,70,0.16)]"
+                  >
+                    <p className="px-2 pb-1 pt-1.5 text-[6px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                      Move {camera.id} to
+                    </p>
+
+                    {ops.presets.map((preset, presetIndex) => (
+                      <button
+                        key={preset.name}
+                        role="menuitem"
+                        onClick={() => choosePreset(presetIndex)}
+                        className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-[7px] font-semibold ${
+                          ops.activePreset === presetIndex
+                            ? 'bg-[#eef3ff] text-[#00288e]'
+                            : 'text-[#334155] hover:bg-[#f4f7fc]'
+                        }`}
+                      >
+                        {preset.name}
+                        <span className="text-[#00288e]">→</span>
+                      </button>
+                    ))}
+
+                    <button
+                      role="menuitem"
+                      onClick={() => choosePreset(null)}
+                      className="mt-0.5 flex w-full items-center justify-between rounded-md border-t border-[#edf1f7] px-2 py-1.5 text-left text-[7px] font-semibold text-[#334155] hover:bg-[#f4f7fc]"
+                    >
+                      Home position
+                      <span className="text-[#00288e]">→</span>
+                    </button>
+                  </div>
+                )}
               </>
             )}
 
             {camera.status === 'critical' && (
-              <button className="rounded-md bg-[#e32222] px-2 py-1 text-[6.5px] font-bold text-white">
-                Auto-Dispatch
+              <button
+                onClick={onDispatch}
+                disabled={ops.dispatched}
+                className={`rounded-md px-2 py-1 text-[6.5px] font-bold ${
+                  ops.dispatched
+                    ? 'bg-[#dcf7e8] text-[#00714e]'
+                    : 'bg-[#e32222] text-white hover:bg-[#c81d1d]'
+                }`}
+              >
+                {ops.dispatched ? 'Dispatched ✓' : 'Auto-Dispatch'}
               </button>
             )}
           </div>
@@ -908,35 +1326,55 @@ function CameraCard({
   )
 }
 
-function DetectionOverlay({
-  status,
-}) {
-  if (status === 'critical') {
-    return (
-      <div className="absolute left-[27%] top-[22%] h-[50%] w-[43%] border-2 border-red-500 bg-red-500/10">
-        <span className="absolute -top-[17px] left-0 whitespace-nowrap bg-red-600 px-1.5 py-0.5 text-[6px] font-bold text-white">
-          FIRE/SMOKE 99.4%
-        </span>
-      </div>
-    )
-  }
-
-  if (status === 'high') {
-    return (
-      <div className="absolute right-[18%] top-[22%] h-[53%] w-[29%] border-2 border-orange-500 bg-orange-500/10">
-        <span className="absolute -top-[17px] left-0 whitespace-nowrap bg-orange-500 px-1.5 py-0.5 text-[6px] font-bold text-white">
-          RESTRICTED ZONE 98%
-        </span>
-      </div>
-    )
-  }
+function DetectionOverlay({ status }) {
+  const box = DETECTIONS[status]
+  if (!box) return null
 
   return (
-    <div className="absolute left-[26%] top-[28%] h-[38%] w-[40%] border-2 border-yellow-500 bg-yellow-500/10">
-      <span className="absolute -top-[17px] left-0 whitespace-nowrap bg-[#c28b00] px-1.5 py-0.5 text-[6px] font-bold text-white">
-        PPE / SAFETY ALERT
+    <div
+      className="absolute border-2"
+      style={{
+        left: `${box.left}%`,
+        top: `${box.top}%`,
+        width: `${box.width}%`,
+        height: `${box.height}%`,
+        borderColor: box.border,
+        backgroundColor: box.fill,
+      }}
+    >
+      <span
+        className="absolute -top-[17px] left-0 whitespace-nowrap px-1.5 py-0.5 text-[6px] font-bold text-white"
+        style={{ backgroundColor: box.labelBg }}
+      >
+        {box.label}
       </span>
     </div>
+  )
+}
+
+function HeatmapOverlay({ status }) {
+  const box = DETECTIONS[status]
+  const hot = box
+    ? { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+    : { x: 55, y: 62 }
+  const intensity =
+    { critical: 0.55, high: 0.45, medium: 0.35 }[status] ?? 0.2
+
+  // A safe camera shows only low-risk (yellow/green) density, never a red hot spot.
+  const core = box
+    ? `rgba(239, 68, 68, ${intensity})`
+    : `rgba(250, 204, 21, ${intensity})`
+  const ring = box
+    ? `rgba(250, 204, 21, ${intensity * 0.6})`
+    : 'rgba(34, 197, 94, 0.16)'
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-0"
+      style={{
+        background: `radial-gradient(circle at ${hot.x}% ${hot.y}%, ${core} 0%, ${ring} 20%, rgba(34, 197, 94, 0.12) 40%, transparent 62%), radial-gradient(circle at 18% 78%, rgba(250, 204, 21, 0.18), transparent 28%)`,
+      }}
+    />
   )
 }
 
@@ -1030,6 +1468,7 @@ function StatCard({
 function InventoryTable({
   cameras,
   onOpenCamera,
+  onExport,
 }) {
   return (
     <section className="overflow-hidden rounded-xl border border-[#dfe5ee] bg-white shadow-[0_1px_8px_rgba(15,35,70,0.04)]">
@@ -1044,7 +1483,11 @@ function InventoryTable({
           </p>
         </div>
 
-        <button className="flex w-fit items-center gap-1.5 rounded-md bg-white px-2.5 py-1.5 text-[7px] font-semibold text-[#00288e] shadow-sm">
+        <button
+          onClick={onExport}
+          disabled={cameras.length === 0}
+          className="flex w-fit items-center gap-1.5 rounded-md bg-white px-2.5 py-1.5 text-[7px] font-semibold text-[#00288e] shadow-sm hover:bg-[#f7f9ff] disabled:cursor-not-allowed disabled:opacity-50"
+        >
           <Download className="h-3 w-3" />
           Export Telemetry CSV
         </button>
@@ -1211,10 +1654,57 @@ function ActionButton({
   )
 }
 
-function CameraDetails({ camera, onBack }) {
-  const [zoom, setZoom] = useState(3.2)
+const OVERLAY_MODES = [
+  ['all', 'All'],
+  ['boxes', 'Bounding Boxes'],
+  ['heatmap', 'Safety Heatmap'],
+  ['clean', 'Clean Feed'],
+]
+
+const formatDuration = (seconds) =>
+  `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+
+const describePosition = ({ pan, tilt, zoom }) =>
+  `AZ ${pan.toFixed(1)}° · EL ${tilt.toFixed(1)}° · ${zoom.toFixed(1)}x`
+
+function CameraDetails({
+  camera,
+  ops,
+  onUpdate,
+  onLog,
+  onSnapshot,
+  onDispatch,
+  notify,
+  onBack,
+}) {
+  const navigate = useNavigate()
   const [ptzSpeed, setPtzSpeed] = useState(50)
-  const [acknowledged, setAcknowledged] = useState(false)
+  const [overlayMode, setOverlayMode] = useState('all')
+  const [motion, setMotion] = useState({ duration: 150, label: null })
+  const [focusing, setFocusing] = useState(false)
+  const [audioOn, setAudioOn] = useState(false)
+  const [recordingSince, setRecordingSince] = useState(null)
+  const [now, setNow] = useState(() => Date.now())
+  const [sirenOn, setSirenOn] = useState(false)
+  const [snapshotBusy, setSnapshotBusy] = useState(false)
+  const motionTimer = useRef(null)
+  const focusTimer = useRef(null)
+  const siren = useSiren()
+  const hold = useHoldRepeat()
+
+  useEffect(
+    () => () => {
+      clearTimeout(motionTimer.current)
+      clearTimeout(focusTimer.current)
+    },
+    []
+  )
+
+  useEffect(() => {
+    if (!recordingSince) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [recordingSince])
 
   const offline = camera.status === 'offline'
   const isAlert =
@@ -1222,9 +1712,167 @@ function CameraDetails({ camera, onBack }) {
     camera.status === 'critical' ||
     camera.status === 'medium'
 
-  const cameraIndex = CAMERAS.findIndex((item) => item.id === camera.id)
-  const image =
-    CAMERA_IMAGES[Math.max(cameraIndex, 0) % CAMERA_IMAGES.length]
+  const image = imageFor(camera)
+  const { ptz, home, focus } = ops
+  const blur = focusing ? 2.5 : focusBlur(focus)
+  const showBoxes = overlayMode === 'all' || overlayMode === 'boxes'
+  const showHeatmap = overlayMode === 'all' || overlayMode === 'heatmap'
+  const recElapsed = recordingSince
+    ? Math.max(0, Math.floor((now - recordingSince) / 1000))
+    : 0
+
+  const movePtz = (change) =>
+    onUpdate((current) => ({ ptz: change(current.ptz), activePreset: null }))
+
+  const step = Math.max(0.5, ptzSpeed / 10)
+
+  const nudge = (panDirection, tiltDirection) =>
+    movePtz((position) => ({
+      ...position,
+      pan: wrapDegrees(position.pan + panDirection * step),
+      tilt: clamp(round1(position.tilt + tiltDirection * step), TILT_MIN, TILT_MAX),
+    }))
+
+  const zoomBy = (direction) =>
+    movePtz((position) => {
+      const factor = 1 + ptzSpeed / 500
+      const next =
+        direction > 0
+          ? Math.max(position.zoom * factor, position.zoom + 0.1)
+          : Math.min(position.zoom / factor, position.zoom - 0.1)
+      return { ...position, zoom: clamp(round1(next), ZOOM_MIN, ZOOM_MAX) }
+    })
+
+  // Preset/home moves travel at a speed set by the PTZ Speed slider, like a real dome.
+  const goTo = (position, label, presetIndex = null) => {
+    const duration = 400 + (100 - ptzSpeed) * 10
+    clearTimeout(motionTimer.current)
+    setMotion({ duration, label })
+    onUpdate(() => ({ ptz: position, activePreset: presetIndex }))
+    motionTimer.current = setTimeout(
+      () => setMotion({ duration: 150, label: null }),
+      duration
+    )
+  }
+
+  const recallPreset = (index) =>
+    goTo(ops.presets[index].position, `PRESET ${index + 1}`, index)
+
+  const savePreset = (index) => {
+    const preset = ops.presets[index]
+    onUpdate((current) => ({
+      presets: current.presets.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, position: current.ptz } : item
+      ),
+      activePreset: index,
+    }))
+    onLog({
+      title: 'PTZ Preset Updated',
+      text: preset.name,
+      sub: describePosition(ptz),
+    })
+    notify('Preset saved', `${preset.name} now points to ${describePosition(ptz)}`)
+  }
+
+  const autoFocus = () => {
+    onUpdate(() => ({ focus: { mode: 'auto', value: 50 } }))
+    clearTimeout(focusTimer.current)
+    setFocusing(true)
+    focusTimer.current = setTimeout(() => setFocusing(false), 350)
+  }
+
+  const manualFocus = (direction) =>
+    onUpdate((current) => ({
+      focus: {
+        mode: 'manual',
+        value: clamp(current.focus.value + direction * 5, 0, 100),
+      },
+    }))
+
+  const toggleRecording = () => {
+    if (recordingSince) {
+      const duration = formatDuration(
+        Math.max(1, Math.floor((Date.now() - recordingSince) / 1000))
+      )
+      setRecordingSince(null)
+      onLog({
+        title: 'Manual Clip Recorded',
+        text: `${camera.id} · duration ${duration}`,
+        sub: 'Status: Saved to NVR evidence store',
+      })
+      notify('Recording stopped', `${duration} clip from ${camera.id} saved to NVR`)
+      return
+    }
+
+    const start = Date.now()
+    setRecordingSince(start)
+    setNow(start)
+    notify('Recording started', `Manual clip recording on ${camera.id}`)
+  }
+
+  const toggleAudio = () => {
+    setAudioOn(!audioOn)
+    notify(
+      audioOn ? 'Audio muted' : 'Audio monitoring on',
+      `${camera.id} field microphone ${audioOn ? 'muted' : 'is now live'}`
+    )
+  }
+
+  const handleSnapshot = async () => {
+    setSnapshotBusy(true)
+    await onSnapshot(showBoxes)
+    setSnapshotBusy(false)
+  }
+
+  const toggleSiren = () => {
+    if (sirenOn) {
+      siren.stop()
+      setSirenOn(false)
+      onLog({
+        title: 'Broadcast Siren Stopped',
+        text: `${camera.area} PA zone`,
+        sub: 'Status: Siren silenced by operator',
+      })
+      notify('Siren stopped', `PA siren silenced for ${camera.area}`)
+      return
+    }
+
+    if (!siren.start()) {
+      notify('Siren unavailable', 'This browser cannot play audio alerts', 'error')
+      return
+    }
+
+    setSirenOn(true)
+    onLog({
+      title: 'Broadcast Siren Activated',
+      text: `${camera.area} PA zone`,
+      sub: 'Status: Evacuation tone sounding',
+      severity: 'high',
+    })
+    notify('Broadcast siren sounding', `PA siren active for ${camera.area}`)
+  }
+
+  const acknowledge = () => {
+    onUpdate(() => ({ acknowledged: true }))
+    onLog({
+      title: 'Alert Acknowledged',
+      text: `${ALERT_META[camera.status].detection} · ${camera.id}`,
+      sub: 'Status: Acknowledged by operator',
+    })
+    notify('Alert acknowledged', `${camera.id} alert marked as acknowledged`)
+  }
+
+  const reportHazard = () => {
+    const reference = `HZ-${String(camera.tenderNo).padStart(2, '0')}-${clockTime().replace(/:/g, '')}`
+    onUpdate(() => ({ hazardReported: reference }))
+    onLog({
+      title: 'Hazard Report Filed',
+      text: `${reference} · ${camera.location}`,
+      sub: 'Status: Sent to shift safety officer',
+      severity: 'high',
+    })
+    notify('Hazard reported', `${reference} filed for ${camera.id}`)
+  }
 
   const modules = [
     ['Fire / Smoke', 'Thermal and optical smoke monitoring active', camera.status === 'critical' ? 'TRIGGERED' : 'SAFE'],
@@ -1235,52 +1883,6 @@ function CameraDetails({ camera, onBack }) {
     ['Restricted Zone', 'Unauthorized entry near rotating equipment', camera.status === 'high' ? 'TRIGGERED' : 'SAFE'],
     ['Fallen Person', 'Zero movement / slip-fall detection active', 'SAFE'],
     ['Ash/Dust Leak', 'Chute seal and particulate density normal', 'SAFE'],
-  ]
-
-  const recentEvents = [
-    {
-      title:
-        camera.status === 'critical'
-          ? 'Fire / Smoke Detection'
-          : camera.status === 'high'
-            ? 'Restricted Zone Entry'
-            : camera.status === 'medium'
-              ? 'PPE Compliance Alert'
-              : 'Routine Camera Health Check',
-      time: '14:32:08',
-      text: `${camera.id} · ${camera.location}`,
-      sub:
-        camera.status === 'safe'
-          ? 'Status: Normal operation'
-          : 'Safety event logged by edge AI',
-      severity:
-        camera.status === 'safe'
-          ? 'safe'
-          : camera.status === 'medium'
-            ? 'medium'
-            : 'high',
-    },
-    {
-      title: 'Shift Inspection Acknowledged',
-      time: '12:15:20',
-      text: 'Verified by Control Room Operator',
-      sub: 'Status: Safe Compliance',
-      severity: 'safe',
-    },
-    {
-      title: 'Minor Dust Cloud Detected',
-      time: '09:40:11',
-      text: 'Transient plume during conveyor operation',
-      sub: 'Status: Auto-resolved',
-      severity: 'medium',
-    },
-    {
-      title: 'Shift B Diagnostics Passed',
-      time: '06:00:00',
-      text: 'PTZ motor calibration, optical wiper & AI sync nominal',
-      sub: 'Status: 100% Operational',
-      severity: 'safe',
-    },
   ]
 
   return (
@@ -1339,8 +1941,18 @@ function CameraDetails({ camera, onBack }) {
             </span>
 
             {isAlert && (
-              <button className="rounded-lg bg-[#9b000d] px-3 py-2 text-[8px] font-bold text-white">
-                Report Hazard
+              <button
+                onClick={reportHazard}
+                disabled={Boolean(ops.hazardReported)}
+                className={`rounded-lg px-3 py-2 text-[8px] font-bold ${
+                  ops.hazardReported
+                    ? 'bg-[#dcf7e8] text-[#00714e]'
+                    : 'bg-[#9b000d] text-white hover:bg-[#82000b]'
+                }`}
+              >
+                {ops.hazardReported
+                  ? `Reported · ${ops.hazardReported}`
+                  : 'Report Hazard'}
               </button>
             )}
           </div>
@@ -1359,35 +1971,68 @@ function CameraDetails({ camera, onBack }) {
                     RTSP stream unavailable
                   </p>
                 </div>
-              ) : camera.streamUrl ? (
-                <video
-                  src={camera.streamUrl}
-                  autoPlay
-                  muted
-                  controls
-                  playsInline
-                  className="h-full w-full object-cover"
-                />
               ) : (
-                <img
-                  src={image}
-                  alt={camera.location}
-                  className="h-full w-full object-cover"
-                />
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    transform: viewTransform(ptzView(ptz, home)),
+                    transition: `transform ${motion.duration}ms ease-out`,
+                  }}
+                >
+                  {camera.streamUrl ? (
+                    <video
+                      src={camera.streamUrl}
+                      autoPlay
+                      loop
+                      muted={!audioOn}
+                      playsInline
+                      className="h-full w-full object-cover"
+                      style={{ filter: `blur(${blur}px)`, transition: 'filter 350ms ease-out' }}
+                    />
+                  ) : (
+                    <img
+                      src={image}
+                      alt={camera.location}
+                      crossOrigin="anonymous"
+                      className="h-full w-full object-cover"
+                      style={{ filter: `blur(${blur}px)`, transition: 'filter 350ms ease-out' }}
+                    />
+                  )}
+
+                  {showHeatmap && <HeatmapOverlay status={camera.status} />}
+                  {showBoxes && isAlert && <DetectionOverlay status={camera.status} />}
+                </div>
               )}
 
               {!offline && (
                 <>
+                  {overlayMode !== 'clean' && (
+                    <div className="pointer-events-none absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2">
+                      <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-white/60" />
+                      <span className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-white/60" />
+                    </div>
+                  )}
+
                   <div className="absolute left-3 top-3 flex items-center gap-1.5">
                     <span className="rounded bg-[#ba1a1a] px-2 py-1 text-[7px] font-bold text-white">
                       ● REC
                     </span>
+                    {recordingSince && (
+                      <span className="animate-pulse rounded bg-[#ba1a1a] px-2 py-1 font-mono text-[7px] font-bold text-white">
+                        ● CLIP {formatDuration(recElapsed)}
+                      </span>
+                    )}
                     <span className="rounded bg-black/70 px-2 py-1 text-[7px] font-bold text-white">
                       {camera.id} · {camera.area}
                     </span>
                   </div>
 
                   <div className="absolute right-3 top-3 flex gap-1">
+                    {audioOn && (
+                      <span className="flex items-center gap-1 rounded bg-black/70 px-2 py-1 text-[7px] font-bold text-white">
+                        <Volume2 className="h-2.5 w-2.5" /> AUDIO
+                      </span>
+                    )}
                     <span className="rounded bg-[#009b69] px-2 py-1 text-[7px] font-bold text-white">
                       LIVE FEED
                     </span>
@@ -1396,11 +2041,16 @@ function CameraDetails({ camera, onBack }) {
                     </span>
                   </div>
 
-                  {isAlert && <DetectionOverlay status={camera.status} />}
+                  {motion.label && (
+                    <span className="absolute left-1/2 top-11 -translate-x-1/2 rounded bg-[#00288e]/90 px-2 py-1 font-mono text-[7px] font-bold text-white">
+                      PTZ MOVING → {motion.label}
+                    </span>
+                  )}
 
                   <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
                     <div className="rounded bg-black/70 px-2 py-1 font-mono text-[7px] text-white">
-                      PTZ AZIMUTH 184.2° | ELEVATION -14.6° | ZOOM {zoom.toFixed(1)}X
+                      PTZ AZIMUTH {ptz.pan.toFixed(1)}° | ELEVATION {ptz.tilt.toFixed(1)}° | ZOOM {ptz.zoom.toFixed(1)}X
+                      {focus.mode === 'manual' && ` | MF ${focus.value}%`}
                     </div>
 
                     <div className="rounded bg-black/70 px-2 py-1 text-[7px] text-[#72f1b8]">
@@ -1413,12 +2063,52 @@ function CameraDetails({ camera, onBack }) {
 
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#edf1f7] px-3 py-2.5">
               <div className="flex items-center gap-2">
-                <button className="grid h-7 w-7 place-items-center rounded-md bg-[#eef3ff] text-[#00288e]">
-                  ◉
+                <button
+                  onClick={toggleRecording}
+                  disabled={offline}
+                  aria-label={recordingSince ? 'Stop clip recording' : 'Record clip'}
+                  title={recordingSince ? 'Stop clip recording' : 'Record clip'}
+                  className={`grid h-7 w-7 place-items-center rounded-md transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                    recordingSince
+                      ? 'bg-[#ba1a1a] text-white'
+                      : 'bg-[#eef3ff] text-[#ba1a1a] hover:bg-[#e2e9ff]'
+                  }`}
+                >
+                  {recordingSince ? (
+                    <Square className="h-3 w-3 fill-current" />
+                  ) : (
+                    <Circle className="h-3.5 w-3.5 fill-current" />
+                  )}
                 </button>
-                <button className="grid h-7 w-7 place-items-center rounded-md bg-[#eef3ff] text-[#00288e]">
-                  🔊
+
+                <button
+                  onClick={toggleAudio}
+                  disabled={offline}
+                  aria-label={audioOn ? 'Mute audio' : 'Listen to audio'}
+                  title={audioOn ? 'Mute audio' : 'Listen to audio'}
+                  className={`grid h-7 w-7 place-items-center rounded-md transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                    audioOn
+                      ? 'bg-[#00288e] text-white'
+                      : 'bg-[#eef3ff] text-[#00288e] hover:bg-[#e2e9ff]'
+                  }`}
+                >
+                  {audioOn ? (
+                    <Volume2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <VolumeX className="h-3.5 w-3.5" />
+                  )}
                 </button>
+
+                <button
+                  onClick={handleSnapshot}
+                  disabled={offline || snapshotBusy}
+                  aria-label="Take snapshot"
+                  title="Take snapshot"
+                  className="grid h-7 w-7 place-items-center rounded-md bg-[#eef3ff] text-[#00288e] transition hover:bg-[#e2e9ff] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                </button>
+
                 <span className="text-[7px] text-[#657286]">
                   Edge AI Latency: <b>19ms</b>
                 </span>
@@ -1432,20 +2122,21 @@ function CameraDetails({ camera, onBack }) {
             </div>
 
             <div className="flex flex-wrap gap-1.5 border-t border-[#edf1f7] px-3 py-2">
-              {['All', 'Bounding Boxes', 'Safety Heatmap', 'Clean Feed'].map(
-                (item, index) => (
-                  <button
-                    key={item}
-                    className={`rounded-md px-2.5 py-1 text-[6.5px] font-semibold ${
-                      index === 0
-                        ? 'bg-[#00288e] text-white'
-                        : 'bg-[#eef2f8] text-[#536174]'
-                    }`}
-                  >
-                    {item}
-                  </button>
-                )
-              )}
+              {OVERLAY_MODES.map(([mode, label]) => (
+                <button
+                  key={mode}
+                  onClick={() => setOverlayMode(mode)}
+                  disabled={offline}
+                  aria-pressed={overlayMode === mode}
+                  className={`rounded-md px-2.5 py-1 text-[6.5px] font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                    overlayMode === mode
+                      ? 'bg-[#00288e] text-white'
+                      : 'bg-[#eef2f8] text-[#536174] hover:bg-[#e2e8f2]'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
 
               <span className="ml-auto rounded bg-[#eef2f8] px-2 py-1 text-[6px] text-[#536174]">
                 1080p 60fps
@@ -1460,7 +2151,9 @@ function CameraDetails({ camera, onBack }) {
                   PTZ Camera Controls
                 </h2>
                 <p className="mt-1 text-[7px] text-slate-500">
-                  Pan, tilt, optical zoom, focus and preset controls.
+                  {offline
+                    ? 'Camera offline — PTZ commands cannot reach the dome.'
+                    : 'Pan, tilt, optical zoom, focus and preset controls. Hold a button to keep moving.'}
                 </p>
               </div>
 
@@ -1473,8 +2166,10 @@ function CameraDetails({ camera, onBack }) {
                   min="10"
                   max="100"
                   value={ptzSpeed}
+                  disabled={offline}
                   onChange={(e) => setPtzSpeed(Number(e.target.value))}
-                  className="w-24 accent-[#00288e]"
+                  aria-label="PTZ speed"
+                  className="w-24 accent-[#00288e] disabled:opacity-40"
                 />
                 <span className="text-[7px] font-bold text-[#00288e]">
                   {ptzSpeed}%
@@ -1490,36 +2185,51 @@ function CameraDetails({ camera, onBack }) {
 
                 <div className="mx-auto mt-3 grid w-[110px] grid-cols-3 gap-2">
                   <div />
-                  <PtzButton text="↑" />
+                  <PtzButton text="↑" label="Tilt up" disabled={offline} {...hold(() => nudge(0, 1), offline)} />
                   <div />
-                  <PtzButton text="←" />
-                  <button className="grid h-9 w-9 place-items-center rounded-full bg-[#00288e] text-[6px] font-bold text-white">
+                  <PtzButton text="←" label="Pan left" disabled={offline} {...hold(() => nudge(-1, 0), offline)} />
+                  <button
+                    onClick={() => goTo(home, 'HOME')}
+                    disabled={offline}
+                    aria-label="Return to home position"
+                    title="Return to home position"
+                    className="grid h-9 w-9 place-items-center rounded-full bg-[#00288e] text-[6px] font-bold text-white transition hover:bg-[#001f6e] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
                     HOME
                   </button>
-                  <PtzButton text="→" />
+                  <PtzButton text="→" label="Pan right" disabled={offline} {...hold(() => nudge(1, 0), offline)} />
                   <div />
-                  <PtzButton text="↓" />
+                  <PtzButton text="↓" label="Tilt down" disabled={offline} {...hold(() => nudge(0, -1), offline)} />
                   <div />
                 </div>
+
+                <p className="mt-3 text-center font-mono text-[6.5px] font-semibold text-[#536174]">
+                  AZ {ptz.pan.toFixed(1)}° · EL {ptz.tilt.toFixed(1)}°
+                </p>
+                <p className="mt-0.5 text-center text-[6px] text-slate-400">
+                  Step {step.toFixed(1)}° per click at {ptzSpeed}% speed
+                </p>
               </div>
 
               <div className="rounded-lg bg-[#f4f7fc] p-4">
                 <div className="grid grid-cols-2 gap-2">
-                  <SmallTelemetry label="Optical Zoom" value={`${zoom.toFixed(1)}x`} />
-                  <SmallTelemetry label="Optical" value="32x" />
+                  <SmallTelemetry label="Optical Zoom" value={`${ptz.zoom.toFixed(1)}x`} />
+                  <SmallTelemetry label="Optical" value={`${ZOOM_MAX}x`} />
                 </div>
 
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <button
-                    onClick={() => setZoom((value) => Math.min(32, value + 0.5))}
-                    className="rounded-md bg-white px-2 py-2 text-[7px] font-semibold text-[#00288e]"
+                    disabled={offline || ptz.zoom >= ZOOM_MAX}
+                    {...hold(() => zoomBy(1), offline)}
+                    className="rounded-md bg-white px-2 py-2 text-[7px] font-semibold text-[#00288e] transition hover:bg-[#e8eeff] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Zoom In (+)
                   </button>
 
                   <button
-                    onClick={() => setZoom((value) => Math.max(1, value - 0.5))}
-                    className="rounded-md bg-white px-2 py-2 text-[7px] font-semibold text-[#00288e]"
+                    disabled={offline || ptz.zoom <= ZOOM_MIN}
+                    {...hold(() => zoomBy(-1), offline)}
+                    className="rounded-md bg-white px-2 py-2 text-[7px] font-semibold text-[#00288e] transition hover:bg-[#e8eeff] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Zoom Out (-)
                   </button>
@@ -1531,16 +2241,49 @@ function CameraDetails({ camera, onBack }) {
                   </p>
 
                   <div className="mt-2 flex gap-1">
-                    <button className="rounded-md bg-[#00288e] px-2 py-1.5 text-[6px] font-bold text-white">
+                    <button
+                      onClick={autoFocus}
+                      disabled={offline}
+                      aria-pressed={focus.mode === 'auto'}
+                      className={`rounded-md px-2 py-1.5 text-[6px] font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                        focus.mode === 'auto'
+                          ? 'bg-[#00288e] text-white'
+                          : 'bg-white text-[#536174] hover:bg-[#e8eeff]'
+                      }`}
+                    >
                       Auto Focus
                     </button>
-                    <button className="rounded-md bg-white px-2 py-1.5 text-[6px] text-[#536174]">
+                    <button
+                      disabled={offline}
+                      {...hold(() => manualFocus(1), offline)}
+                      className={`rounded-md px-2 py-1.5 text-[6px] transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                        focus.mode === 'manual'
+                          ? 'bg-[#e8eeff] font-bold text-[#00288e]'
+                          : 'bg-white text-[#536174] hover:bg-[#e8eeff]'
+                      }`}
+                    >
                       Manual +
                     </button>
-                    <button className="rounded-md bg-white px-2 py-1.5 text-[6px] text-[#536174]">
+                    <button
+                      disabled={offline}
+                      {...hold(() => manualFocus(-1), offline)}
+                      className={`rounded-md px-2 py-1.5 text-[6px] transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                        focus.mode === 'manual'
+                          ? 'bg-[#e8eeff] font-bold text-[#00288e]'
+                          : 'bg-white text-[#536174] hover:bg-[#e8eeff]'
+                      }`}
+                    >
                       Manual -
                     </button>
                   </div>
+
+                  <p className="mt-2 text-[6px] text-slate-500">
+                    {focus.mode === 'auto'
+                      ? focusing
+                        ? 'Auto focus: searching…'
+                        : 'Auto focus: locked'
+                      : `Manual focus: ${focus.value}% (sharpest at 50%)`}
+                  </p>
                 </div>
               </div>
 
@@ -1550,21 +2293,44 @@ function CameraDetails({ camera, onBack }) {
                 </p>
 
                 <div className="mt-3 space-y-2">
-                  {[
-                    'Preset 1: Conveyor Drive Motor',
-                    'Preset 2: Discharge Chute & Scraper',
-                    'Preset 3: Catwalk & Access Ladder',
-                    'Preset 4: Take-up Pulley Area',
-                  ].map((item) => (
-                    <button
-                      key={item}
-                      className="flex w-full items-center justify-between rounded-md bg-white px-2.5 py-2 text-left text-[7px] font-semibold text-[#334155]"
-                    >
-                      {item}
-                      <span className="text-[#00288e]">→</span>
-                    </button>
-                  ))}
+                  {ops.presets.map((preset, index) => {
+                    const active = ops.activePreset === index
+
+                    return (
+                      <div key={preset.name} className="flex items-stretch gap-1">
+                        <button
+                          onClick={() => recallPreset(index)}
+                          disabled={offline}
+                          title={describePosition(preset.position)}
+                          className={`flex flex-1 items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-[7px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                            active
+                              ? 'bg-[#00288e] text-white'
+                              : 'bg-white text-[#334155] hover:bg-[#e8eeff]'
+                          }`}
+                        >
+                          {preset.name}
+                          <span className={active ? 'text-white' : 'text-[#00288e]'}>
+                            {active ? '●' : '→'}
+                          </span>
+                        </button>
+
+                        <button
+                          onClick={() => savePreset(index)}
+                          disabled={offline}
+                          aria-label={`Save current view to ${preset.name}`}
+                          title="Save current view to this preset"
+                          className="grid w-7 shrink-0 place-items-center rounded-md bg-white text-[#64748b] transition hover:bg-[#e8eeff] hover:text-[#00288e] disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Save className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )
+                  })}
                 </div>
+
+                <p className="mt-2 text-[6px] text-slate-400">
+                  Click a preset to move there. The save icon stores the current view in that slot.
+                </p>
               </div>
             </div>
           </section>
@@ -1603,8 +2369,14 @@ function CameraDetails({ camera, onBack }) {
             <section className="overflow-hidden rounded-xl bg-white shadow-[0_1px_8px_rgba(15,35,70,0.06)]">
               <div className="bg-[#fff2f1] p-4">
                 <div className="flex items-center justify-between">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#ffe0dc] px-2 py-1 text-[7px] font-bold text-[#9b000d]">
-                    ⚠ HIGH SEVERITY ALERT
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[7px] font-bold ${
+                      ops.acknowledged
+                        ? 'bg-[#dcf7e8] text-[#00714e]'
+                        : 'bg-[#ffe0dc] text-[#9b000d]'
+                    }`}
+                  >
+                    {ops.acknowledged ? '✓ ALERT ACKNOWLEDGED' : '⚠ HIGH SEVERITY ALERT'}
                   </span>
                   <span className="text-[7px] text-slate-500">14:32:08</span>
                 </div>
@@ -1636,24 +2408,41 @@ function CameraDetails({ camera, onBack }) {
               </div>
 
               <div className="p-3">
-                <button className="w-full rounded-lg bg-[#ba1a1a] py-2 text-[8px] font-bold text-white">
-                  Sound Broadcast Siren
+                <button
+                  onClick={toggleSiren}
+                  aria-pressed={sirenOn}
+                  className={`w-full rounded-lg py-2 text-[8px] font-bold text-white transition ${
+                    sirenOn
+                      ? 'animate-pulse bg-[#7a0009]'
+                      : 'bg-[#ba1a1a] hover:bg-[#9e1616]'
+                  }`}
+                >
+                  {sirenOn ? '■ Stop Broadcast Siren' : 'Sound Broadcast Siren'}
                 </button>
 
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <button
-                    onClick={() => setAcknowledged(true)}
+                    onClick={acknowledge}
+                    disabled={ops.acknowledged}
                     className={`rounded-lg py-2 text-[7px] font-bold ${
-                      acknowledged
+                      ops.acknowledged
                         ? 'bg-[#dcf7e8] text-[#00714e]'
-                        : 'bg-[#00288e] text-white'
+                        : 'bg-[#00288e] text-white hover:bg-[#001f6e]'
                     }`}
                   >
-                    {acknowledged ? 'Alert Acknowledged' : 'Acknowledge Alert'}
+                    {ops.acknowledged ? 'Alert Acknowledged ✓' : 'Acknowledge Alert'}
                   </button>
 
-                  <button className="rounded-lg bg-[#eef2f8] py-2 text-[7px] font-semibold text-[#334155]">
-                    Dispatch Patrol
+                  <button
+                    onClick={onDispatch}
+                    disabled={ops.dispatched}
+                    className={`rounded-lg py-2 text-[7px] font-semibold ${
+                      ops.dispatched
+                        ? 'bg-[#dcf7e8] font-bold text-[#00714e]'
+                        : 'bg-[#eef2f8] text-[#334155] hover:bg-[#e2e8f2]'
+                    }`}
+                  >
+                    {ops.dispatched ? 'Patrol Dispatched ✓' : 'Dispatch Patrol'}
                   </button>
                 </div>
               </div>
@@ -1705,12 +2494,15 @@ function CameraDetails({ camera, onBack }) {
             </div>
 
             <div className="mt-3 space-y-2">
-              {recentEvents.map((event) => (
-                <EventCard key={`${event.title}-${event.time}`} event={event} />
+              {ops.events.map((event) => (
+                <EventCard key={event.id} event={event} />
               ))}
             </div>
 
-            <button className="mt-3 flex w-full items-center justify-between rounded-lg bg-[#eef3ff] px-3 py-2 text-[7px] font-semibold text-[#00288e]">
+            <button
+              onClick={() => navigate('/incidents')}
+              className="mt-3 flex w-full items-center justify-between rounded-lg bg-[#eef3ff] px-3 py-2 text-[7px] font-semibold text-[#00288e] hover:bg-[#e2e9ff]"
+            >
               View Complete CCTV Event Audit Log
               <span>→</span>
             </button>
@@ -1721,11 +2513,149 @@ function CameraDetails({ camera, onBack }) {
   )
 }
 
-function PtzButton({ text }) {
+function PtzButton({ text, label, ...props }) {
   return (
-    <button className="grid h-9 w-9 place-items-center rounded-lg bg-white text-sm font-bold text-[#00288e] shadow-sm transition hover:bg-[#e8eeff]">
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className="grid h-9 w-9 touch-none select-none place-items-center rounded-lg bg-white text-sm font-bold text-[#00288e] shadow-sm transition hover:bg-[#e8eeff] active:bg-[#dbe5ff] disabled:cursor-not-allowed disabled:opacity-40"
+      {...props}
+    >
       {text}
     </button>
+  )
+}
+
+const HOLD_DELAY = 350
+const HOLD_INTERVAL = 90
+
+// Press-and-hold behaviour for PTZ buttons: one step on press, then repeat until release.
+// Release is watched on window so it still ends if the button becomes disabled mid-hold.
+function useHoldRepeat() {
+  const stopRef = useRef(null)
+
+  const stop = useCallback(() => {
+    stopRef.current?.()
+    stopRef.current = null
+  }, [])
+
+  useEffect(() => stop, [stop])
+
+  return useCallback(
+    (action, disabled = false) => ({
+      onPointerDown: (event) => {
+        if (disabled || event.button !== 0) return
+
+        stop()
+        action()
+
+        let repeat
+        const delay = setTimeout(() => {
+          repeat = setInterval(action, HOLD_INTERVAL)
+        }, HOLD_DELAY)
+
+        window.addEventListener('pointerup', stop)
+        window.addEventListener('pointercancel', stop)
+        window.addEventListener('blur', stop)
+
+        stopRef.current = () => {
+          clearTimeout(delay)
+          clearInterval(repeat)
+          window.removeEventListener('pointerup', stop)
+          window.removeEventListener('pointercancel', stop)
+          window.removeEventListener('blur', stop)
+        }
+      },
+      // Keyboard activation (Enter/Space) produces a click with detail 0.
+      onClick: (event) => {
+        if (event.detail === 0 && !disabled) action()
+      },
+    }),
+    [stop]
+  )
+}
+
+function useSiren() {
+  const sirenRef = useRef(null)
+
+  const stop = useCallback(() => {
+    const siren = sirenRef.current
+    if (!siren) return
+
+    clearInterval(siren.timer)
+    siren.oscillator.stop()
+    siren.context.close()
+    sirenRef.current = null
+  }, [])
+
+  const start = useCallback(() => {
+    if (sirenRef.current) return true
+
+    const AudioCtx = window.AudioContext || window.webkitAudioContext
+    if (!AudioCtx) return false
+
+    const context = new AudioCtx()
+    const oscillator = context.createOscillator()
+    const gain = context.createGain()
+
+    oscillator.type = 'triangle'
+    oscillator.frequency.value = 650
+    gain.gain.value = 0.06
+    oscillator.connect(gain)
+    gain.connect(context.destination)
+    oscillator.start()
+
+    let high = false
+    const timer = setInterval(() => {
+      high = !high
+      oscillator.frequency.setValueAtTime(high ? 960 : 650, context.currentTime)
+    }, 450)
+
+    sirenRef.current = { context, oscillator, timer }
+    return true
+  }, [])
+
+  useEffect(() => stop, [stop])
+
+  return useMemo(() => ({ start, stop }), [start, stop])
+}
+
+function Toast({ toast, onClose }) {
+  if (!toast) return null
+
+  const error = toast.tone === 'error'
+
+  return (
+    <div
+      role="status"
+      className="fixed right-5 top-20 z-[200] w-[350px] max-w-[calc(100%-40px)] rounded-xl border border-blue-100 bg-white p-4 shadow-2xl"
+    >
+      <div className="flex gap-3">
+        <div
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+            error ? 'bg-red-100 text-[#ba1a1a]' : 'bg-blue-100 text-[#00288e]'
+          }`}
+        >
+          {error ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-[#0b1c30]">{toast.title}</p>
+          <p className="mt-1 break-words text-xs leading-5 text-slate-500">
+            {toast.message}
+          </p>
+        </div>
+
+        <button
+          onClick={onClose}
+          aria-label="Dismiss notification"
+          className="ml-auto h-fit rounded-md p-1 text-slate-400 hover:bg-slate-100"
+        >
+          <X size={16} />
+        </button>
+      </div>
+    </div>
   )
 }
 
