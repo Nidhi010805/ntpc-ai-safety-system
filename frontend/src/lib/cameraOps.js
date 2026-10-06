@@ -40,6 +40,45 @@ export function fileStamp(date = new Date()) {
 export const clockTime = (date = new Date()) =>
   `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+// Camera on-screen-display timestamp, e.g. "06-10-2026 Tue 16:32:07".
+export const osdTime = (date = new Date()) =>
+  `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${WEEKDAYS[date.getDay()]} ${clockTime(date)}`
+
+const secondListeners = new Set()
+let secondTimer = null
+let tickedSecond = 0
+
+const wallSecond = () => Math.floor(Date.now() / 1000)
+
+// One shared ticker, aligned to wall-clock seconds, drives every on-screen camera clock.
+export function subscribeToSeconds(listener) {
+  secondListeners.add(listener)
+
+  if (!secondTimer) {
+    const tick = () => {
+      tickedSecond = wallSecond()
+      secondTimer = setTimeout(tick, 1000 - (Date.now() % 1000))
+      secondListeners.forEach((notify) => notify())
+    }
+
+    tickedSecond = wallSecond()
+    secondTimer = setTimeout(tick, 1000 - (Date.now() % 1000))
+  }
+
+  return () => {
+    secondListeners.delete(listener)
+    if (secondListeners.size === 0) {
+      clearTimeout(secondTimer)
+      secondTimer = null
+    }
+  }
+}
+
+// Only changes on a tick, so React never sees the time move in the middle of a render.
+export const currentSecond = () => (secondTimer ? tickedSecond : wallSecond())
+
 let fullscreenWanted = false
 
 // The whole document goes fullscreen (not just the viewer) so page-level layers like toasts stay visible.

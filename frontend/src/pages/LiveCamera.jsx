@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -38,12 +39,15 @@ import {
   captureSnapshot,
   clamp,
   clockTime,
+  currentSecond,
   downloadCsv,
   enterDocumentFullscreen,
   exitDocumentFullscreen,
   fileStamp,
+  osdTime,
   ptzView,
   round1,
+  subscribeToSeconds,
   viewTransform,
   wrapDegrees,
 } from '../lib/cameraOps'
@@ -1177,15 +1181,16 @@ function CameraCard({
 
             <div className="absolute left-2 top-2 flex gap-1">
               <span
-                className={`rounded px-1.5 py-0.5 text-[6px] font-bold text-white ${
+                className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[6px] font-bold text-white ${
                   camera.status === 'critical'
                     ? 'bg-[#ba1a1a]'
                     : 'bg-[#009b69]'
                 }`}
               >
+                <LiveDot className="h-1 w-1 bg-white" />
                 {camera.status === 'critical'
                   ? 'ALARM ACTIVE'
-                  : '● LIVE'}
+                  : 'LIVE'}
               </span>
 
               <span className="rounded bg-black/65 px-1.5 py-0.5 text-[6px] font-semibold text-white">
@@ -1198,7 +1203,7 @@ function CameraCard({
             </span>
 
             <span className="absolute bottom-2 left-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[5.5px] text-white">
-              LIVE STREAM
+              <LiveClock />
               {ops.activePreset !== null && ` · PRESET ${ops.activePreset + 1}`}
             </span>
 
@@ -1357,6 +1362,20 @@ function CameraCard({
         </div>
       </div>
     </article>
+  )
+}
+
+function LiveClock() {
+  const second = useSyncExternalStore(subscribeToSeconds, currentSecond)
+  return osdTime(new Date(second * 1000))
+}
+
+function LiveDot({ className }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-block shrink-0 rounded-full motion-safe:animate-rec-blink ${className}`}
+    />
   )
 }
 
@@ -2121,8 +2140,9 @@ function CameraDetails({
               {!offline && (
                 <>
                   <div className="absolute left-3 top-3 flex items-center gap-1.5">
-                    <span className="rounded bg-[#ba1a1a] px-2 py-1 text-[7px] font-bold text-white">
-                      ● REC
+                    <span className="flex items-center gap-1 rounded bg-[#ba1a1a] px-2 py-1 text-[7px] font-bold text-white">
+                      <LiveDot className="h-1.5 w-1.5 bg-white" />
+                      REC
                     </span>
                     {recordingSince && (
                       <span className="animate-pulse rounded bg-[#ba1a1a] px-2 py-1 font-mono text-[7px] font-bold text-white">
@@ -2160,8 +2180,14 @@ function CameraDetails({
                       {focus.mode === 'manual' && ` | MF ${focus.value}%`}
                     </div>
 
-                    <div className="rounded bg-black/70 px-2 py-1 text-[7px] text-[#72f1b8]">
-                      OPTICAL AI · CODEC H.265
+                    <div className="flex items-center gap-1">
+                      <div className="rounded bg-black/70 px-2 py-1 font-mono text-[7px] text-white">
+                        <LiveClock />
+                      </div>
+
+                      <div className="rounded bg-black/70 px-2 py-1 text-[7px] text-[#72f1b8]">
+                        OPTICAL AI · CODEC H.265
+                      </div>
                     </div>
                   </div>
                 </>
@@ -2796,8 +2822,12 @@ function FullscreenViewer({
 
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-semibold text-white/75">
                   <span className="flex items-center gap-1.5 text-[#5ee6a8]">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#00c47f]" />
+                    <LiveDot className="h-1.5 w-1.5 bg-[#00c47f]" />
                     LIVE · 25 FPS · 1080p
+                  </span>
+
+                  <span className="font-mono text-white">
+                    <LiveClock />
                   </span>
 
                   <span className="font-mono">
@@ -3036,20 +3066,30 @@ function FullscreenViewer({
           </div>
         </>
       ) : (
-        <div className="absolute right-4 top-4 flex gap-1 rounded-xl bg-black/60 p-1 backdrop-blur">
-          <button
-            type="button"
-            onClick={() => setControlsVisible(true)}
-            className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-bold transition hover:bg-white/15"
-          >
-            <Eye className="h-3.5 w-3.5" />
-            Show controls
-          </button>
+        <>
+          <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-lg bg-black/55 px-2.5 py-1.5 font-mono text-[11px] font-semibold backdrop-blur">
+            <LiveDot className="h-2 w-2 bg-[#ff4d4d]" />
+            {camera.id}
+            <span className="text-white/80">
+              <LiveClock />
+            </span>
+          </div>
 
-          <ViewerButton label="Exit fullscreen" onClick={onExit}>
-            <Minimize className="h-4 w-4" />
-          </ViewerButton>
-        </div>
+          <div className="absolute right-4 top-4 flex gap-1 rounded-xl bg-black/60 p-1 backdrop-blur">
+            <button
+              type="button"
+              onClick={() => setControlsVisible(true)}
+              className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-bold transition hover:bg-white/15"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              Show controls
+            </button>
+
+            <ViewerButton label="Exit fullscreen" onClick={onExit}>
+              <Minimize className="h-4 w-4" />
+            </ViewerButton>
+          </div>
+        </>
       )}
     </div>
   )
