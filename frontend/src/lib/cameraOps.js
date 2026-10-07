@@ -79,6 +79,85 @@ export function subscribeToSeconds(listener) {
 // Only changes on a tick, so React never sees the time move in the middle of a render.
 export const currentSecond = () => (secondTimer ? tickedSecond : wallSecond())
 
+export const MAX_PRESETS = 4
+export const PRESET_NAME_MAX = 24
+const PRESET_STORAGE_KEY = 'heightsafe-x.ptz-presets'
+
+let presetsByCamera = null
+const presetListeners = new Set()
+let presetSeq = 0
+
+export const nextPresetId = () => `${Date.now().toString(36)}-${(presetSeq += 1)}`
+
+const isFiniteNumber = (value) => typeof value === 'number' && Number.isFinite(value)
+
+// Saved presets come back from localStorage, so malformed entries are dropped and values clamped.
+function readStoredPresets() {
+  let stored
+  try {
+    stored = JSON.parse(localStorage.getItem(PRESET_STORAGE_KEY) ?? '{}')
+  } catch {
+    return {}
+  }
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {}
+
+  const result = {}
+  for (const [cameraId, list] of Object.entries(stored)) {
+    if (!Array.isArray(list)) continue
+
+    const ids = new Set()
+    const clean = []
+    for (const preset of list) {
+      const position = preset?.position
+      if (
+        typeof preset?.id !== 'string' ||
+        ids.has(preset.id) ||
+        typeof preset.name !== 'string' ||
+        !preset.name.trim() ||
+        ![position?.pan, position?.tilt, position?.zoom].every(isFiniteNumber)
+      ) {
+        continue
+      }
+
+      ids.add(preset.id)
+      clean.push({
+        id: preset.id,
+        name: preset.name.trim().slice(0, PRESET_NAME_MAX),
+        position: {
+          pan: wrapDegrees(position.pan),
+          tilt: clamp(round1(position.tilt), TILT_MIN, TILT_MAX),
+          zoom: clamp(round1(position.zoom), ZOOM_MIN, ZOOM_MAX),
+        },
+      })
+      if (clean.length === MAX_PRESETS) break
+    }
+
+    if (clean.length) result[cameraId] = clean
+  }
+  return result
+}
+
+export const getPresets = () => (presetsByCamera ??= readStoredPresets())
+
+export function subscribeToPresets(listener) {
+  presetListeners.add(listener)
+  return () => presetListeners.delete(listener)
+}
+
+export function setCameraPresets(cameraId, presets) {
+  const next = { ...getPresets() }
+  if (presets.length) next[cameraId] = presets.slice(0, MAX_PRESETS)
+  else delete next[cameraId]
+  presetsByCamera = next
+
+  try {
+    localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(next))
+  } catch {
+    // Storage blocked or full: presets still work until the page is reloaded.
+  }
+  presetListeners.forEach((notify) => notify())
+}
+
 let fullscreenWanted = false
 
 // The whole document goes fullscreen (not just the viewer) so page-level layers like toasts stay visible.
