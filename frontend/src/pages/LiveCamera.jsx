@@ -19,12 +19,15 @@ import {
   EyeOff,
   Grid2X2,
   List,
+  LocateFixed,
   Maximize,
   Minimize,
+  Pencil,
+  Plus,
   RefreshCw,
-  Save,
   Search,
   Square,
+  Trash2,
   VideoOff,
   Volume2,
   VolumeX,
@@ -32,6 +35,8 @@ import {
   X,
 } from 'lucide-react'
 import {
+  MAX_PRESETS,
+  PRESET_NAME_MAX,
   TILT_MAX,
   TILT_MIN,
   ZOOM_MAX,
@@ -44,9 +49,13 @@ import {
   enterDocumentFullscreen,
   exitDocumentFullscreen,
   fileStamp,
+  getPresets,
+  nextPresetId,
   osdTime,
   ptzView,
   round1,
+  setCameraPresets,
+  subscribeToPresets,
   subscribeToSeconds,
   viewTransform,
   wrapDegrees,
@@ -508,13 +517,6 @@ const DETECTIONS = {
   },
 }
 
-const PRESET_TEMPLATES = [
-  { name: 'Conveyor Drive Motor', pan: -22, tilt: -6, zoom: 4 },
-  { name: 'Discharge Chute & Scraper', pan: 18, tilt: -12, zoom: 6 },
-  { name: 'Catwalk & Access Ladder', pan: 30, tilt: 8, zoom: 2.5 },
-  { name: 'Take-up Pulley Area', pan: -35, tilt: -4, zoom: 8 },
-]
-
 const homePosition = (camera) => ({
   pan: wrapDegrees(camera.tenderNo * 47.3 + 12.5),
   tilt: round1(-8 - ((camera.tenderNo * 3.7) % 14)),
@@ -568,9 +570,11 @@ function seedEvents(camera) {
 }
 
 const DEFAULT_OPS = new Map()
+const NO_PRESETS = []
 
-// Per-camera operational state (PTZ position, presets, alert actions, event log).
+// Per-camera operational state (PTZ position, alert actions, event log).
 // Kept above the page views so a camera stays where the operator left it.
+// Saved presets are separate: they live in the cameraOps preset store and survive reloads.
 function defaultOps(camera) {
   if (!DEFAULT_OPS.has(camera.id)) {
     const home = homePosition(camera)
@@ -579,14 +583,6 @@ function defaultOps(camera) {
       home,
       ptz: home,
       focus: { mode: 'auto', value: 50 },
-      presets: PRESET_TEMPLATES.map((preset, index) => ({
-        name: `Preset ${index + 1}: ${preset.name}`,
-        position: {
-          pan: wrapDegrees(home.pan + preset.pan),
-          tilt: clamp(round1(home.tilt + preset.tilt), TILT_MIN, TILT_MAX),
-          zoom: preset.zoom,
-        },
-      })),
       activePreset: null,
       acknowledged: false,
       dispatched: false,
@@ -634,8 +630,10 @@ export default function LiveCamera() {
   const [toast, setToast] = useState(null)
   const toastTimer = useRef(null)
   const gridScroll = useRef(0)
+  const presets = useSyncExternalStore(subscribeToPresets, getPresets)
 
   const opsFor = (camera) => ops[camera.id] ?? defaultOps(camera)
+  const presetsFor = (camera) => presets[camera.id] ?? NO_PRESETS
 
   const updateOps = useCallback((id, change) => {
     setOps((prev) => {
@@ -696,13 +694,11 @@ export default function LiveCamera() {
     setFullscreenFrom(null)
   }
 
-  const openAtPosition = (camera, presetIndex) => {
+  // preset === null means the camera's home position.
+  const openAtPosition = (camera, preset) => {
     updateOps(camera.id, (current) => ({
-      ptz:
-        presetIndex === null
-          ? current.home
-          : current.presets[presetIndex].position,
-      activePreset: presetIndex,
+      ptz: preset ? preset.position : current.home,
+      activePreset: preset ? preset.id : null,
     }))
     openCamera(camera)
   }
@@ -830,6 +826,7 @@ export default function LiveCamera() {
           key={selectedCamera.id}
           camera={selectedCamera}
           ops={opsFor(selectedCamera)}
+          presets={presetsFor(selectedCamera)}
           onUpdate={(change) => updateOps(selectedCamera.id, change)}
           onLog={(event) => logEvent(selectedCamera.id, event)}
           onSnapshot={(showBoxes) => snapshot(selectedCamera, 16 / 9, showBoxes)}
@@ -1053,9 +1050,10 @@ export default function LiveCamera() {
                   key={camera.id}
                   camera={camera}
                   ops={opsFor(camera)}
+                  presets={presetsFor(camera)}
                   onOpen={() => openCamera(camera)}
                   onFullscreen={() => openFullscreenFromGrid(camera)}
-                  onOpenAt={(presetIndex) => openAtPosition(camera, presetIndex)}
+                  onOpenAt={(preset) => openAtPosition(camera, preset)}
                   onSnapshot={() => snapshot(camera, 16 / 8.5, true)}
                   onDispatch={() => dispatchTeam(camera)}
                 />
@@ -1091,6 +1089,7 @@ export default function LiveCamera() {
 function CameraCard({
   camera,
   ops,
+  presets,
   onOpen,
   onFullscreen,
   onOpenAt,
@@ -1130,9 +1129,11 @@ function CameraCard({
     ALERT_META[camera.status] ||
     ALERT_META.safe
 
-  const choosePreset = (presetIndex) => {
+  const activePreset = presets.find((preset) => preset.id === ops.activePreset)
+
+  const choosePreset = (preset) => {
     setPresetMenuOpen(false)
-    onOpenAt(presetIndex)
+    onOpenAt(preset)
   }
 
   return (
@@ -1204,7 +1205,7 @@ function CameraCard({
 
             <span className="absolute bottom-2 left-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[5.5px] text-white">
               <LiveClock />
-              {ops.activePreset !== null && ` · PRESET ${ops.activePreset + 1}`}
+              {activePreset && ` · ${activePreset.name}`}
             </span>
 
             <span className="absolute inset-0 grid place-items-center bg-black/0 text-[8px] font-bold uppercase tracking-[0.08em] text-transparent transition-colors group-hover:bg-black/35 group-hover:text-white">
@@ -1309,18 +1310,26 @@ function CameraCard({
                       Move {camera.id} to
                     </p>
 
-                    {ops.presets.map((preset, presetIndex) => (
+                    {presets.length === 0 && (
+                      <p className="px-2 py-1.5 text-[7px] text-slate-400">
+                        No presets saved for this camera yet.
+                      </p>
+                    )}
+
+                    {presets.map((preset, index) => (
                       <button
-                        key={preset.name}
+                        key={preset.id}
                         role="menuitem"
-                        onClick={() => choosePreset(presetIndex)}
-                        className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-[7px] font-semibold ${
-                          ops.activePreset === presetIndex
+                        onClick={() => choosePreset(preset)}
+                        title={describePosition(preset.position)}
+                        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[7px] font-semibold ${
+                          ops.activePreset === preset.id
                             ? 'bg-[#eef3ff] text-[#00288e]'
                             : 'text-[#334155] hover:bg-[#f4f7fc]'
                         }`}
                       >
-                        {preset.name}
+                        <span className="font-mono text-slate-400">{index + 1}</span>
+                        <span className="min-w-0 flex-1 truncate">{preset.name}</span>
                         <span className="text-[#00288e]">→</span>
                       </button>
                     ))}
@@ -1332,6 +1341,18 @@ function CameraCard({
                     >
                       Home position
                       <span className="text-[#00288e]">→</span>
+                    </button>
+
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setPresetMenuOpen(false)
+                        onOpen()
+                      }}
+                      className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[7px] font-semibold text-[#00288e] hover:bg-[#f4f7fc]"
+                    >
+                      Manage presets
+                      <span>→</span>
                     </button>
                   </div>
                 )}
@@ -1789,9 +1810,13 @@ const formatDuration = (seconds) =>
 const describePosition = ({ pan, tilt, zoom }) =>
   `AZ ${pan.toFixed(1)}° · EL ${tilt.toFixed(1)}° · ${zoom.toFixed(1)}x`
 
+const samePosition = (a, b) =>
+  a.pan === b.pan && a.tilt === b.tilt && a.zoom === b.zoom
+
 function CameraDetails({
   camera,
   ops,
+  presets,
   onUpdate,
   onLog,
   onSnapshot,
@@ -1812,6 +1837,8 @@ function CameraDetails({
   const [now, setNow] = useState(() => Date.now())
   const [sirenOn, setSirenOn] = useState(false)
   const [snapshotBusy, setSnapshotBusy] = useState(false)
+  // null when closed; { preset } when editing, {} when adding.
+  const [presetForm, setPresetForm] = useState(null)
   const motionTimer = useRef(null)
   const focusTimer = useRef(null)
   const siren = useSiren()
@@ -1867,34 +1894,62 @@ function CameraDetails({
     })
 
   // Preset/home moves travel at a speed set by the PTZ Speed slider, like a real dome.
-  const goTo = (position, label, presetIndex = null) => {
+  const goTo = (position, label, presetId = null) => {
     const duration = 400 + (100 - ptzSpeed) * 10
     clearTimeout(motionTimer.current)
     setMotion({ duration, label })
-    onUpdate(() => ({ ptz: position, activePreset: presetIndex }))
+    onUpdate(() => ({ ptz: position, activePreset: presetId }))
     motionTimer.current = setTimeout(
       () => setMotion({ duration: 150, label: null }),
       duration
     )
   }
 
-  const recallPreset = (index) =>
-    goTo(ops.presets[index].position, `PRESET ${index + 1}`, index)
+  const recallPreset = (preset) =>
+    goTo(preset.position, preset.name.toUpperCase(), preset.id)
 
-  const savePreset = (index) => {
-    const preset = ops.presets[index]
+  // existing is the preset being edited; undefined when adding a new one.
+  const savePreset = ({ name, position }, existing) => {
+    const saved = existing
+      ? { ...existing, name, position }
+      : { id: nextPresetId(), name, position }
+
+    setCameraPresets(
+      camera.id,
+      existing
+        ? presets.map((item) => (item.id === saved.id ? saved : item))
+        : [...presets, saved]
+    )
+
+    // Highlight the preset only if the camera is actually sitting on it.
+    const atPreset = samePosition(position, ptz)
     onUpdate((current) => ({
-      presets: current.presets.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, position: current.ptz } : item
-      ),
-      activePreset: index,
+      activePreset: atPreset
+        ? saved.id
+        : current.activePreset === saved.id
+          ? null
+          : current.activePreset,
+    }))
+
+    onLog({
+      title: existing ? 'PTZ Preset Updated' : 'PTZ Preset Saved',
+      text: name,
+      sub: describePosition(position),
+    })
+    notify(existing ? 'Preset updated' : 'Preset saved', `${name} · ${describePosition(position)}`)
+  }
+
+  const deletePreset = (preset) => {
+    setCameraPresets(camera.id, presets.filter((item) => item.id !== preset.id))
+    onUpdate((current) => ({
+      activePreset: current.activePreset === preset.id ? null : current.activePreset,
     }))
     onLog({
-      title: 'PTZ Preset Updated',
+      title: 'PTZ Preset Deleted',
       text: preset.name,
-      sub: describePosition(ptz),
+      sub: describePosition(preset.position),
     })
-    notify('Preset saved', `${preset.name} now points to ${describePosition(ptz)}`)
+    notify('Preset deleted', `${preset.name} removed from ${camera.id}`)
   }
 
   const autoFocus = () => {
@@ -2007,8 +2062,10 @@ function CameraDetails({
     nudge,
     zoomBy,
     goHome: () => goTo(home, 'HOME'),
+    presets,
     recallPreset,
     savePreset,
+    deletePreset,
     focusing,
     autoFocus,
     manualFocus,
@@ -2433,48 +2490,105 @@ function CameraDetails({
               </div>
 
               <div className="rounded-lg bg-[#f4f7fc] p-4">
-                <p className="text-[7px] font-bold uppercase text-slate-400">
-                  PTZ Camera Quick Presets
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="text-[7px] font-bold uppercase text-slate-400">
+                    PTZ Camera Quick Presets
+                  </p>
+                  <span className="text-[7px] font-bold text-[#00288e]">
+                    {presets.length} / {MAX_PRESETS}
+                  </span>
+                </div>
 
                 <div className="mt-3 space-y-2">
-                  {ops.presets.map((preset, index) => {
-                    const active = ops.activePreset === index
+                  {presets.length === 0 && !presetForm && (
+                    <p className="rounded-md border border-dashed border-[#cfd8e6] bg-white px-2.5 py-3 text-center text-[7px] leading-3 text-slate-500">
+                      No presets saved yet. Point the camera, then save the view with a name.
+                    </p>
+                  )}
+
+                  {presets.map((preset, index) => {
+                    const active = ops.activePreset === preset.id
+                    const editing = presetForm?.preset?.id === preset.id
 
                     return (
-                      <div key={preset.name} className="flex items-stretch gap-1">
+                      <div key={preset.id} className="flex items-stretch gap-1">
                         <button
-                          onClick={() => recallPreset(index)}
+                          onClick={() => recallPreset(preset)}
                           disabled={offline}
-                          title={describePosition(preset.position)}
-                          className={`flex flex-1 items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-[7px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                          aria-label={`Go to preset ${preset.name}`}
+                          className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition disabled:cursor-not-allowed disabled:opacity-40 ${
                             active
                               ? 'bg-[#00288e] text-white'
-                              : 'bg-white text-[#334155] hover:bg-[#e8eeff]'
+                              : editing
+                                ? 'bg-[#e8eeff] text-[#00288e]'
+                                : 'bg-white text-[#334155] hover:bg-[#e8eeff]'
                           }`}
                         >
-                          {preset.name}
+                          <span
+                            className={`grid h-4 w-4 shrink-0 place-items-center rounded font-mono text-[7px] font-bold ${
+                              active ? 'bg-white text-[#00288e]' : 'bg-[#eef3ff] text-[#00288e]'
+                            }`}
+                          >
+                            {index + 1}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[7px] font-semibold">
+                              {preset.name}
+                            </span>
+                            <span className="block font-mono text-[6px] opacity-70">
+                              {describePosition(preset.position)}
+                            </span>
+                          </span>
                           <span className={active ? 'text-white' : 'text-[#00288e]'}>
                             {active ? '●' : '→'}
                           </span>
                         </button>
 
                         <button
-                          onClick={() => savePreset(index)}
+                          onClick={() => setPresetForm({ preset })}
                           disabled={offline}
-                          aria-label={`Save current view to ${preset.name}`}
-                          title="Save current view to this preset"
+                          aria-label={`Edit preset ${preset.name}`}
+                          title="Edit or delete this preset"
                           className="grid w-7 shrink-0 place-items-center rounded-md bg-white text-[#64748b] transition hover:bg-[#e8eeff] hover:text-[#00288e] disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          <Save className="h-3 w-3" />
+                          <Pencil className="h-3 w-3" />
                         </button>
                       </div>
                     )
                   })}
                 </div>
 
-                <p className="mt-2 text-[6px] text-slate-400">
-                  Click a preset to move there. The save icon stores the current view in that slot.
+                {presetForm ? (
+                  <PresetForm
+                    key={presetForm.preset?.id ?? 'new'}
+                    preset={presetForm.preset}
+                    current={ptz}
+                    presets={presets}
+                    onSave={(draft) => {
+                      savePreset(draft, presetForm.preset)
+                      setPresetForm(null)
+                    }}
+                    onDelete={() => {
+                      deletePreset(presetForm.preset)
+                      setPresetForm(null)
+                    }}
+                    onCancel={() => setPresetForm(null)}
+                  />
+                ) : (
+                  <button
+                    onClick={() => setPresetForm({})}
+                    disabled={offline || presets.length >= MAX_PRESETS}
+                    className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-md bg-[#00288e] px-2.5 py-2 text-[7px] font-bold text-white transition hover:bg-[#001f6e] disabled:cursor-not-allowed disabled:bg-[#c7d2e5]"
+                  >
+                    <Plus className="h-3 w-3" />
+                    {presets.length >= MAX_PRESETS
+                      ? `Preset limit reached (${MAX_PRESETS}/${MAX_PRESETS})`
+                      : 'Save current view as preset'}
+                  </button>
+                )}
+
+                <p className="mt-2 text-[6px] leading-3 text-slate-400">
+                  Up to {MAX_PRESETS} named views per camera, kept on this browser. Click one to move the camera there.
                 </p>
               </div>
             </div>
@@ -2670,6 +2784,180 @@ function CameraDetails({
   )
 }
 
+const COORDINATE_FIELDS = [
+  { key: 'pan', label: 'Azimuth', unit: '°', min: 0, max: 360 },
+  { key: 'tilt', label: 'Elevation', unit: '°', min: TILT_MIN, max: TILT_MAX },
+  { key: 'zoom', label: 'Zoom', unit: 'x', min: ZOOM_MIN, max: ZOOM_MAX },
+]
+
+const toFields = (position) => ({
+  pan: position.pan.toFixed(1),
+  tilt: position.tilt.toFixed(1),
+  zoom: position.zoom.toFixed(1),
+})
+
+const PRESET_FORM_TONES = {
+  light: {
+    form: 'mt-3 space-y-2 rounded-md border border-[#dfe5ee] bg-white p-2.5',
+    title: 'text-[7px] font-bold uppercase tracking-[0.06em] text-[#00288e]',
+    label: 'text-[6px] font-bold uppercase tracking-[0.06em] text-slate-400',
+    input: 'h-6 w-full rounded border border-[#dfe5ee] bg-white px-1.5 text-[8px] text-[#0b1c30] outline-none focus:border-[#00288e]',
+    link: 'flex items-center gap-1 text-[7px] font-semibold text-[#00288e] hover:underline',
+    error: 'text-[7px] font-semibold text-[#ba1a1a]',
+    danger: 'flex items-center gap-1 rounded px-1.5 py-1 text-[7px] font-semibold text-[#ba1a1a] hover:bg-[#fff1f0]',
+    secondary: 'rounded px-2 py-1 text-[7px] font-semibold text-[#536174] hover:bg-[#f1f4f9]',
+    primary: 'rounded bg-[#00288e] px-2.5 py-1 text-[7px] font-bold text-white hover:bg-[#001f6e]',
+  },
+  dark: {
+    form: 'space-y-2.5',
+    title: 'text-[10px] font-bold uppercase tracking-[0.1em] text-white/70',
+    label: 'text-[9px] font-bold uppercase tracking-[0.1em] text-white/55',
+    input: 'h-7 w-full rounded-md border border-white/15 bg-white/10 px-2 text-[12px] text-white outline-none focus:border-white/60',
+    link: 'flex items-center gap-1 text-[10px] font-semibold text-[#9db8ff] hover:underline',
+    error: 'text-[10px] font-semibold text-[#ff9b8f]',
+    danger: 'flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-semibold text-[#ff9b8f] hover:bg-white/10',
+    secondary: 'rounded-md px-2.5 py-1.5 text-[11px] font-semibold text-white/80 hover:bg-white/10',
+    primary: 'rounded-md bg-white px-3 py-1.5 text-[11px] font-bold text-[#00288e] hover:bg-white/90',
+  },
+}
+
+// Add or edit a named preset. Coordinates start at the preset's values (edit) or the
+// camera's current position (add) and can be typed directly.
+function PresetForm({ preset, current, presets, tone = 'light', onSave, onDelete, onCancel }) {
+  const [name, setName] = useState(preset?.name ?? '')
+  const [fields, setFields] = useState(() => toFields(preset?.position ?? current))
+  const [error, setError] = useState('')
+  const styles = PRESET_FORM_TONES[tone]
+
+  const submit = (event) => {
+    event.preventDefault()
+
+    const trimmed = name.trim()
+    const values = Object.fromEntries(
+      COORDINATE_FIELDS.map(({ key }) => [key, fields[key] === '' ? NaN : Number(fields[key])])
+    )
+    const outOfRange = COORDINATE_FIELDS.find(
+      ({ key, min, max }) => !(values[key] >= min && values[key] <= max)
+    )
+    const duplicate = presets.some(
+      (item) => item.id !== preset?.id && item.name.toLowerCase() === trimmed.toLowerCase()
+    )
+
+    let problem = ''
+    if (!trimmed) problem = 'Give the preset a name.'
+    else if (duplicate) problem = `"${trimmed}" is already used on this camera.`
+    else if (outOfRange) {
+      problem = `${outOfRange.label} must be between ${outOfRange.min}${outOfRange.unit} and ${outOfRange.max}${outOfRange.unit}.`
+    }
+
+    if (problem) {
+      setError(problem)
+      return
+    }
+
+    onSave({
+      name: trimmed,
+      position: {
+        pan: wrapDegrees(values.pan),
+        tilt: round1(values.tilt),
+        zoom: round1(values.zoom),
+      },
+    })
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      onKeyDown={(event) => {
+        // Esc closes the form instead of reaching the fullscreen viewer's Esc-to-exit.
+        if (event.key === 'Escape') {
+          event.stopPropagation()
+          onCancel()
+        }
+      }}
+      noValidate
+      aria-label={preset ? `Edit preset ${preset.name}` : 'New preset'}
+      className={styles.form}
+    >
+      <p className={styles.title}>{preset ? 'Edit preset' : 'New preset'}</p>
+
+      <label className="block">
+        <span className={styles.label}>Name</span>
+        <input
+          autoFocus
+          value={name}
+          maxLength={PRESET_NAME_MAX}
+          placeholder="e.g. Drive motor"
+          onChange={(event) => {
+            setName(event.target.value)
+            setError('')
+          }}
+          className={`mt-1 ${styles.input}`}
+        />
+      </label>
+
+      <div className="grid grid-cols-3 gap-1.5">
+        {COORDINATE_FIELDS.map(({ key, label, unit, min, max }) => (
+          <label key={key} className="block min-w-0">
+            <span className={styles.label}>
+              {label} {unit}
+            </span>
+            <input
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              min={min}
+              max={max}
+              value={fields[key]}
+              onChange={(event) => {
+                const value = event.target.value
+                setFields((previous) => ({ ...previous, [key]: value }))
+                setError('')
+              }}
+              className={`mt-1 ${styles.input}`}
+            />
+          </label>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => {
+          setFields(toFields(current))
+          setError('')
+        }}
+        className={styles.link}
+      >
+        <LocateFixed className="h-3 w-3" />
+        Use current camera position
+      </button>
+
+      {error && (
+        <p role="alert" className={styles.error}>
+          {error}
+        </p>
+      )}
+
+      <div className="flex items-center gap-1.5">
+        {preset && (
+          <button type="button" onClick={onDelete} className={styles.danger}>
+            <Trash2 className="h-3 w-3" />
+            Delete
+          </button>
+        )}
+
+        <button type="button" onClick={onCancel} className={`ml-auto ${styles.secondary}`}>
+          Cancel
+        </button>
+
+        <button type="submit" className={styles.primary}>
+          {preset ? 'Save changes' : 'Save preset'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
 const KEY_MOVES = {
   ArrowLeft: { pan: -1, tilt: 0 },
   ArrowRight: { pan: 1, tilt: 0 },
@@ -2681,8 +2969,6 @@ const KEY_MOVES = {
   _: { zoom: -1 },
 }
 
-const presetShortName = (preset) => preset.name.replace(/^Preset \d+:\s*/, '')
-
 function FullscreenViewer({
   camera,
   ops,
@@ -2693,6 +2979,8 @@ function FullscreenViewer({
   onExit,
 }) {
   const [controlsVisible, setControlsVisible] = useState(true)
+  // null when closed; { preset } when editing, {} when adding.
+  const [presetForm, setPresetForm] = useState(null)
   const rootRef = useRef(null)
   const lastKeyMove = useRef(0)
   const { ptz, focus } = ops
@@ -2749,13 +3037,12 @@ function FullscreenViewer({
 
     if (event.repeat) return
 
-    const presetIndex = Number(key) - 1
+    const preset = /^[1-4]$/.test(key) ? controls.presets[Number(key) - 1] : null
 
     if (key === 'h' || key === 'Home') controls.goHome()
     else if (key === 'c') setControlsVisible((visible) => !visible)
-    else if (Number.isInteger(presetIndex) && presetIndex >= 0 && presetIndex < ops.presets.length) {
-      controls.recallPreset(presetIndex)
-    } else return
+    else if (preset) controls.recallPreset(preset)
+    else return
 
     event.preventDefault()
   })
@@ -3018,44 +3305,85 @@ function FullscreenViewer({
                 </DockNote>
               </DockGroup>
 
-              <DockGroup label="Presets">
-                <div className="grid grid-cols-2 gap-1">
-                  {ops.presets.map((preset, index) => {
-                    const active = ops.activePreset === index
+              <DockGroup label={`Presets ${controls.presets.length}/${MAX_PRESETS}`}>
+                <div className="relative flex w-[368px] max-w-full flex-col gap-1">
+                  {controls.presets.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-1">
+                      {controls.presets.map((preset, index) => {
+                        const active = ops.activePreset === preset.id
 
-                    return (
-                      <div key={preset.name} className="flex gap-0.5">
-                        <button
-                          type="button"
-                          onClick={() => controls.recallPreset(index)}
-                          aria-label={preset.name}
-                          title={`${preset.name} · ${describePosition(preset.position)}`}
-                          className={`flex h-7 w-[180px] items-center gap-1.5 rounded-md px-2 text-left text-[10px] font-semibold transition ${
-                            active
-                              ? 'bg-white text-[#00288e]'
-                              : 'bg-white/10 hover:bg-white/20'
-                          }`}
-                        >
-                          <span
-                            className={`grid h-4 w-4 shrink-0 place-items-center rounded font-mono text-[9px] font-bold ${
-                              active ? 'bg-[#00288e] text-white' : 'bg-white/20'
-                            }`}
-                          >
-                            {index + 1}
-                          </span>
-                          <span className="truncate">{presetShortName(preset)}</span>
-                        </button>
+                        return (
+                          <div key={preset.id} className="flex min-w-0 gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => controls.recallPreset(preset)}
+                              aria-label={`Go to preset ${preset.name}`}
+                              title={`${preset.name} · ${describePosition(preset.position)}`}
+                              className={`flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-[10px] font-semibold transition ${
+                                active
+                                  ? 'bg-white text-[#00288e]'
+                                  : 'bg-white/10 hover:bg-white/20'
+                              }`}
+                            >
+                              <span
+                                className={`grid h-4 w-4 shrink-0 place-items-center rounded font-mono text-[9px] font-bold ${
+                                  active ? 'bg-[#00288e] text-white' : 'bg-white/20'
+                                }`}
+                              >
+                                {index + 1}
+                              </span>
+                              <span className="truncate">{preset.name}</span>
+                            </button>
 
-                        <ViewerButton
-                          label={`Save current view to ${preset.name}`}
-                          size="sm"
-                          onClick={() => controls.savePreset(index)}
-                        >
-                          <Save className="h-3 w-3" />
-                        </ViewerButton>
-                      </div>
-                    )
-                  })}
+                            <ViewerButton
+                              label={`Edit preset ${preset.name}`}
+                              size="sm"
+                              onClick={() => setPresetForm({ preset })}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </ViewerButton>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p className="py-1.5 text-center text-[10px] text-white/60">
+                      No presets yet for this camera
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setPresetForm({})}
+                    disabled={controls.presets.length >= MAX_PRESETS}
+                    className="flex h-7 items-center justify-center gap-1.5 rounded-md border border-dashed border-white/25 text-[10px] font-semibold text-white/85 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Plus className="h-3 w-3" />
+                    {controls.presets.length >= MAX_PRESETS
+                      ? `Preset limit reached (${MAX_PRESETS}/${MAX_PRESETS})`
+                      : 'Save current view as preset'}
+                  </button>
+
+                  {presetForm && (
+                    <div className="absolute bottom-full right-0 mb-10 w-[320px] max-w-[calc(100vw-32px)] rounded-xl border border-white/15 bg-[#0b1220]/95 p-3 text-left shadow-2xl backdrop-blur-md">
+                      <PresetForm
+                        key={presetForm.preset?.id ?? 'new'}
+                        tone="dark"
+                        preset={presetForm.preset}
+                        current={ptz}
+                        presets={controls.presets}
+                        onSave={(draft) => {
+                          controls.savePreset(draft, presetForm.preset)
+                          setPresetForm(null)
+                        }}
+                        onDelete={() => {
+                          controls.deletePreset(presetForm.preset)
+                          setPresetForm(null)
+                        }}
+                        onCancel={() => setPresetForm(null)}
+                      />
+                    </div>
+                  )}
                 </div>
               </DockGroup>
             </div>
