@@ -154,6 +154,33 @@ const ALERTS = [
   },
 ]
 
+// ---------- CSV EXPORT HELPERS ----------
+const csvCell = (value) => {
+  let text = value == null ? '' : String(value)
+  // stops Excel from running cells that start with = + - @ as formulas
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+function downloadCsv(rows, filename) {
+  const headers = Object.keys(rows[0])
+  const csv = [
+    headers.map(csvCell).join(','),
+    ...rows.map((row) => headers.map((h) => csvCell(row[h])).join(',')),
+  ].join('\r\n')
+
+  // \uFEFF (BOM) makes Excel read the file as UTF-8, so "°C" and "—" display correctly
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 export default function ActiveAlerts() {
   const navigate = useNavigate()
 
@@ -232,6 +259,27 @@ export default function ActiveAlerts() {
     )
   }
 
+  const exportTriageCsv = () => {
+    if (filteredAlerts.length === 0) return
+
+    const rows = filteredAlerts.map((alert) => ({
+      'Alert ID': alert.id,
+      Severity: alert.severity.toUpperCase(),
+      Status: alert.acknowledged ? 'Acknowledged' : 'Pending',
+      Title: alert.title,
+      Location: alert.location,
+      Camera: alert.cameraLabel,
+      Time: alert.time,
+      'What Happened': alert.what,
+      'How Serious': alert.seriousness,
+      'Operator Directive': alert.directive,
+      Detection: alert.detection,
+    }))
+
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+    downloadCsv(rows, `triage-alerts-${stamp}.csv`)
+  }
+
   return (
     <div className="w-full space-y-5">
 
@@ -264,7 +312,11 @@ export default function ActiveAlerts() {
             ✓ Acknowledge All Highs
           </button>
 
-          <button className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-[8px] font-semibold text-[#334155] shadow-sm">
+          <button
+            onClick={exportTriageCsv}
+            disabled={filteredAlerts.length === 0}
+            className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-[8px] font-semibold text-[#334155] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+          >
             <Download className="h-3 w-3" />
             Export Triage CSV
           </button>
