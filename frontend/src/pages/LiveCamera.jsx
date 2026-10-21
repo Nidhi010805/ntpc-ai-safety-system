@@ -60,6 +60,12 @@ import {
   viewTransform,
   wrapDegrees,
 } from '../lib/cameraOps'
+import {
+  addSafetyAlert,
+  getSafetyAlerts,
+  resetDemoAlertsForCamera,
+  subscribeToSafetyAlerts,
+} from '../lib/safetyAlerts'
 
 const makeCamera = (
   tenderNo,
@@ -495,8 +501,23 @@ const ALERT_META = {
 const CAMERA_INDEX = new Map(CAMERAS.map((camera, index) => [camera.id, index]))
 const CAMERA_BY_ID = new Map(CAMERAS.map((camera) => [camera.id, camera]))
 
-const imageFor = (camera) =>
-  CAMERA_IMAGES[(CAMERA_INDEX.get(camera.id) ?? 0) % CAMERA_IMAGES.length]
+// Cropped, scenario-specific CCTV demo frames from the supplied reference image.
+ // Files live in public/safety-scenes so they work in local and deployed builds.
+const SCENARIO_IMAGES = {
+  shoes: '/safety-scenes/missing-shoes.jpg',
+  gloves: '/safety-scenes/missing-gloves.jpg',
+  helmet: '/safety-scenes/missing-helmet.jpg',
+  ppe: '/safety-scenes/missing-gloves.jpg',
+  restricted: '/safety-scenes/restricted-entry.jpg',
+  fire: '/safety-scenes/fire-smoke.jpg',
+  normal: '/safety-scenes/normal-view.jpg',
+}
+
+const imageFor = (camera) => {
+  const scenario = camera?.demoScenario
+  if (scenario && SCENARIO_IMAGES[scenario]) return SCENARIO_IMAGES[scenario]
+  return CAMERA_IMAGES[(CAMERA_INDEX.get(camera.id) ?? 0) % CAMERA_IMAGES.length]
+}
 
 // Box geometry is in % of the frame so the same data drives the overlay and the snapshot.
 const DETECTIONS = {
@@ -631,6 +652,12 @@ export default function LiveCamera() {
   const toastTimer = useRef(null)
   const gridScroll = useRef(0)
   const presets = useSyncExternalStore(subscribeToPresets, getPresets)
+  const safetyAlerts = useSyncExternalStore(
+    subscribeToSafetyAlerts,
+    getSafetyAlerts,
+    getSafetyAlerts
+  )
+  const activeSafetyAlertCount = safetyAlerts.filter((alert) => !alert.closed).length
 
   const opsFor = (camera) => ops[camera.id] ?? defaultOps(camera)
   const presetsFor = (camera) => presets[camera.id] ?? NO_PRESETS
@@ -736,6 +763,113 @@ export default function LiveCamera() {
     )
   }
 
+  // Demo-only safety scenarios. These change the UI state and event log; they do not run AI inference.
+  // Demo scenarios only — this function does not run AI inference.
+const triggerDemoScenario = (camera, scenario) => {
+  const scenarios = {
+    normal: {
+      status: null,
+      title: 'Demo Reset',
+      severity: 'safe',
+      details: 'Camera returned to its configured status.',
+    },
+    helmet: {
+      status: 'high',
+      title: 'Missing Helmet',
+      severity: 'high',
+      details: 'Demo event: helmet not detected.',
+    },
+    gloves: {
+      status: 'medium',
+      title: 'Missing Gloves',
+      severity: 'medium',
+      details: 'Demo event: safety gloves not detected.',
+    },
+    shoes: {
+      status: 'medium',
+      title: 'Missing Safety Shoes',
+      severity: 'medium',
+      details: 'Demo event: safety shoes not detected.',
+    },
+    ppe: {
+      status: 'high',
+      title: 'PPE Violation',
+      severity: 'high',
+      details: 'Demo event: one or more required PPE items are missing.',
+    },
+    fire: {
+      status: 'critical',
+      title: 'Fire / Smoke Detected',
+      severity: 'critical',
+      details: 'Demo event: simulated fire/smoke alert.',
+    },
+    restricted: {
+      status: 'high',
+      title: 'Restricted Area Entry',
+      severity: 'high',
+      details: 'Demo event: simulated restricted-area entry.',
+    },
+  }
+
+  const selected = scenarios[scenario]
+  if (!selected) return
+
+  if (scenario === 'normal') {
+    updateOps(camera.id, () => ({
+      demoStatus: camera.status,
+      demoScenario: null,
+      acknowledged: false,
+      hazardReported: false,
+    }))
+
+    // Close active demo alerts without deleting their history.
+    resetDemoAlertsForCamera(camera.id)
+  } else {
+    updateOps(camera.id, () => ({
+      demoStatus: selected.status,
+      demoScenario: scenario,
+      acknowledged: false,
+      hazardReported: false,
+    }))
+
+    // Prevent duplicate active alerts for the same camera and scenario.
+    const existingAlert = getSafetyAlerts().find(
+      (alert) =>
+        String(alert.cameraId) === String(camera.id) &&
+        alert.title === selected.title &&
+        alert.source === 'demo' &&
+        !alert.closed
+    )
+
+    if (!existingAlert) {
+      addSafetyAlert({
+        cameraId: camera.id,
+        cameraLabel: camera.id,
+        location: camera.location,
+        area: camera.area,
+        title: selected.title,
+        severity: selected.severity,
+        details: selected.details,
+        source: 'demo',
+        detectedAt: new Date().toISOString(),
+      })
+    }
+  }
+
+  logEvent(camera.id, {
+    title: selected.title,
+    text: `${camera.id} · ${camera.location}`,
+    sub: selected.details,
+    severity: selected.severity,
+  })
+
+  notify(
+    scenario === 'normal' ? 'Demo reset' : 'Demo alert triggered',
+    `${camera.id}: ${selected.title}`,
+    selected.severity === 'critical' ? 'error' : 'success'
+  )
+}
+
   const areas = useMemo(
     () =>
       [
@@ -749,7 +883,11 @@ export default function LiveCamera() {
   const filteredCameras = useMemo(() => {
     const query = search.trim().toLowerCase()
 
-    return CAMERAS.filter((camera) => {
+    return CAMERAS.map((camera) => ({
+      ...camera,
+      status: opsFor(camera).demoStatus ?? camera.status,
+      demoScenario: opsFor(camera).demoScenario,
+    })).filter((camera) => {
       const matchesSearch =
         !query ||
         camera.id.toLowerCase().includes(query) ||
@@ -771,7 +909,7 @@ export default function LiveCamera() {
         matchesArea
       )
     })
-  }, [search, status, area])
+  }, [search, status, area, ops])
 
   const exportTelemetry = () => {
     const header = [
@@ -824,13 +962,14 @@ export default function LiveCamera() {
       <>
         <CameraDetails
           key={selectedCamera.id}
-          camera={selectedCamera}
+          camera={{ ...selectedCamera, status: opsFor(selectedCamera).demoStatus ?? selectedCamera.status, demoScenario: opsFor(selectedCamera).demoScenario }}
           ops={opsFor(selectedCamera)}
           presets={presetsFor(selectedCamera)}
           onUpdate={(change) => updateOps(selectedCamera.id, change)}
           onLog={(event) => logEvent(selectedCamera.id, event)}
           onSnapshot={(showBoxes) => snapshot(selectedCamera, 16 / 9, showBoxes)}
           onDispatch={() => dispatchTeam(selectedCamera)}
+          onDemoScenario={(scenario) => triggerDemoScenario(selectedCamera, scenario)}
           notify={notify}
           fullscreen={fullscreenFrom !== null}
           onEnterFullscreen={enterFullscreen}
@@ -896,7 +1035,7 @@ export default function LiveCamera() {
 
           <StatCard
             icon={AlertTriangle}
-            value="5"
+            value={String(activeSafetyAlertCount)}
             label="ACTIVE ALERTS"
             type="red"
           />
@@ -1450,7 +1589,10 @@ function CameraFrame({
         )}
 
         {showHeatmap && <HeatmapOverlay status={camera.status} />}
-        {showBoxes && <DetectionOverlay status={camera.status} large={large} />}
+        {showBoxes && !camera.demoScenario && <DetectionOverlay status={camera.status} large={large} />}
+        {camera.demoScenario && !SCENARIO_IMAGES[camera.demoScenario] && (
+          <ScenarioVisualOverlay scenario={camera.demoScenario} large={large} />
+        )}
       </div>
 
       {crosshair && overlayMode !== 'clean' && (
@@ -1491,6 +1633,107 @@ function DetectionOverlay({ status, large = false }) {
       >
         {box.label}
       </span>
+    </div>
+  )
+}
+
+function ScenarioVisualOverlay({ scenario, large = false }) {
+  const labelSize = large ? 'text-[11px]' : 'text-[6px]'
+
+  if (scenario === 'fire') {
+    return (
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div
+          className="absolute inset-0 motion-safe:animate-pulse"
+          style={{
+            background:
+              'radial-gradient(ellipse at 48% 82%, rgba(255,70,0,.78) 0%, rgba(255,125,0,.48) 18%, rgba(220,38,38,.22) 38%, transparent 66%)',
+          }}
+        />
+        <div
+          className="absolute inset-x-[28%] bottom-0 h-[72%] motion-safe:animate-pulse"
+          style={{
+            background:
+              'radial-gradient(ellipse at 50% 100%, rgba(255,226,92,.95) 0%, rgba(255,105,0,.8) 23%, rgba(220,38,38,.5) 48%, transparent 72%)',
+            clipPath:
+              'polygon(0 100%, 9% 61%, 20% 77%, 31% 32%, 43% 65%, 54% 12%, 66% 58%, 78% 28%, 91% 70%, 100% 100%)',
+          }}
+        />
+        <div
+          className="absolute left-[27%] top-[18%] h-[35%] w-[45%] rounded-full blur-xl"
+          style={{
+            background:
+              'radial-gradient(ellipse, rgba(55,65,81,.72), rgba(31,41,55,.35) 55%, transparent 75%)',
+          }}
+        />
+        <div className="absolute left-[4%] top-[5%] rounded bg-red-700 px-2 py-1 font-bold text-white shadow-lg">
+          <span className={labelSize}>DEMO SIMULATION · FIRE / SMOKE</span>
+        </div>
+        <div className="absolute inset-[20%] border-2 border-red-400" />
+      </div>
+    )
+  }
+
+  const configs = {
+    shoes: {
+      label: 'FEET: NO SAFETY SHOES · DEMO',
+      border: '#f97316',
+      left: '35%',
+      top: '68%',
+      width: '34%',
+      height: '24%',
+    },
+    ppe: {
+      label: 'PPE VIOLATION · DEMO',
+      border: '#facc15',
+      left: '32%',
+      top: '25%',
+      width: '38%',
+      height: '52%',
+    },
+    restricted: {
+      label: 'RESTRICTED ZONE ENTRY · DEMO',
+      border: '#fb923c',
+      left: '52%',
+      top: '18%',
+      width: '42%',
+      height: '68%',
+    },
+  }
+
+  const config = configs[scenario]
+  if (!config) return null
+
+  return (
+    <div className="pointer-events-none absolute inset-0">
+      {scenario === 'restricted' && (
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage:
+              'repeating-linear-gradient(135deg, rgba(249,115,22,.16) 0px, rgba(249,115,22,.16) 12px, transparent 12px, transparent 24px)',
+          }}
+        />
+      )}
+      <div
+        className="absolute border-2 border-dashed"
+        style={{
+          left: config.left,
+          top: config.top,
+          width: config.width,
+          height: config.height,
+          borderColor: config.border,
+          backgroundColor: `${config.border}20`,
+          boxShadow: `0 0 0 1px rgba(0,0,0,.18), 0 0 18px ${config.border}55`,
+        }}
+      >
+        <span
+          className={`absolute -top-5 left-0 whitespace-nowrap rounded px-1.5 py-1 font-bold text-black ${labelSize}`}
+          style={{ backgroundColor: config.border }}
+        >
+          {config.label}
+        </span>
+      </div>
     </div>
   )
 }
@@ -1821,6 +2064,7 @@ function CameraDetails({
   onLog,
   onSnapshot,
   onDispatch,
+  onDemoScenario,
   notify,
   fullscreen,
   onEnterFullscreen,
@@ -2707,6 +2951,39 @@ function CameraDetails({
               </div>
             </section>
           )}
+
+          <section className="rounded-xl border border-[#dce6f5] bg-white p-4 shadow-[0_1px_8px_rgba(15,35,70,0.05)]">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-[11px] font-bold text-[#10213a]">Safety Scenario Demo</h2>
+                <p className="mt-1 text-[7px] text-[#64748b]">Choose one event to simulate. Restricted entry appears only when selected; demo only, no live AI inference.</p>
+              </div>
+              <span className="rounded-full bg-[#fff4d6] px-2 py-1 text-[6px] font-bold uppercase tracking-wide text-[#8a5a00]">Simulation</span>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {[
+                ['shoes', 'Missing Shoes'],
+                ['gloves', 'Missing Gloves'],
+                ['helmet', 'Missing Helmet'],
+                ['ppe', 'PPE Violation'],
+                ['fire', 'Fire / Smoke'],
+                ['restricted', 'Restricted Entry'],
+                ['normal', 'Reset to Normal'],
+              ].map(([scenario, label]) => (
+                <button
+                  key={scenario}
+                  onClick={() => onDemoScenario(scenario)}
+                  className={`rounded-lg border px-2 py-2 text-[7px] font-semibold transition-colors ${
+                    camera.demoScenario === scenario
+                      ? 'border-[#00288e] bg-[#e8eeff] text-[#00288e]'
+                      : scenario === 'normal'
+                        ? 'border-[#d9e2ee] bg-[#f7f9fc] text-[#475569] hover:bg-[#edf2f8]'
+                        : 'border-[#f0d6d6] bg-[#fff8f8] text-[#9f2525] hover:bg-[#fff0f0]'
+                  }`}
+                >{label}</button>
+              ))}
+            </div>
+          </section>
 
           <section className="rounded-xl bg-white p-4 shadow-[0_1px_8px_rgba(15,35,70,0.05)]">
             <div className="flex items-center justify-between">

@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
+import { getSafetyAlerts, subscribeToSafetyAlerts } from '../lib/safetyAlerts'
 import {
   LayoutDashboard,
   Camera,
@@ -42,7 +44,6 @@ const NAV = [
     to: '/alerts',
     label: 'Active Alerts',
     icon: AlertTriangle,
-    badge: '5',
     danger: true,
   },
   {
@@ -83,6 +84,16 @@ export default function Sidebar({
   collapsed,
   onToggleCollapse,
 }) {
+  const getActiveAlertCount = () =>
+    getSafetyAlerts().filter((alert) => !alert.closed).length
+
+  const [demoAlertCount, setDemoAlertCount] = useState(getActiveAlertCount)
+
+  useEffect(() => {
+    return subscribeToSafetyAlerts(() => {
+      setDemoAlertCount(getActiveAlertCount())
+    })
+  }, [])
   return (
     <>
       {open && (
@@ -248,7 +259,7 @@ export default function Sidebar({
                               }
                             `}
                           >
-                            {badge}
+                            {label === 'Active Alerts' ? demoAlertCount : badge}
                           </span>
                         )}
                       </div>
@@ -291,7 +302,7 @@ export default function Sidebar({
                                 }
                               `}
                             >
-                              {badge}
+                              {label === 'Active Alerts' ? demoAlertCount : badge}
                             </span>
                           )}
                         </>

@@ -4,16 +4,18 @@ import {
   Search,
   Bell,
   UserRound,
-  CircleCheck,
 } from 'lucide-react'
 
 import {
   alerts,
-  siteSummary,
   workers,
 } from '../data/mockData'
 
 import { levelOf } from '../lib/levels'
+import {
+  getSafetyAlerts,
+  subscribeToSafetyAlerts,
+} from '../lib/safetyAlerts'
 import {
   Link,
   useNavigate,
@@ -33,41 +35,72 @@ function useClock() {
   return now
 }
 
+function formatAlertTime(timestamp) {
+  if (!timestamp) return 'Just now'
+
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return String(timestamp)
+
+  return date.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}
+
 export default function Topbar({ onMenu }) {
   const now = useClock()
-  const summary = siteSummary()
+  const [demoAlerts, setDemoAlerts] = useState(() => getSafetyAlerts())
 
-  const tickerItems = [
+  useEffect(() => {
+    return subscribeToSafetyAlerts(() => {
+      setDemoAlerts(getSafetyAlerts())
+    })
+  }, [])
+
+  // Count only unacknowledged, non-closed alerts from the shared alert store.
+  const notificationCount = demoAlerts.filter(
+    (alert) => !alert.acknowledged && !alert.closed
+  ).length
+
+  // Keep the existing ticker content and append live camera events.
+  const liveDemoTickerItems = demoAlerts
+    .filter((alert) => !alert.closed)
+    .slice(0, 8)
+    .map((alert) => ({
+      id: alert.id,
+      level: alert.severity,
+      workerId: alert.cameraId || 'CAMERA',
+      type: alert.title || 'Safety Alert',
+      zoneName: alert.location || 'Unknown Location',
+      time: formatAlertTime(alert.timestamp),
+    }))
+
+  const tickerBaseItems = [
     ...alerts.slice(0, 8),
-    ...alerts.slice(0, 8),
+    ...liveDemoTickerItems,
   ]
 
-  const navigate = useNavigate()
+  const tickerItems = tickerBaseItems.length
+    ? [...tickerBaseItems, ...tickerBaseItems]
+    : []
 
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [searchError, setSearchError] = useState('')
 
   const handleSearch = (e) => {
     e.preventDefault()
 
-    const query = search
-      .trim()
-      .toLowerCase()
-
+    const query = search.trim().toLowerCase()
     if (!query) return
 
     const worker = workers.find(
       (w) =>
         w.id.toLowerCase() === query ||
-        w.id
-          .toLowerCase()
-          .includes(query) ||
-        w.name
-          .toLowerCase()
-          .includes(query) ||
-        w.zoneName
-          .toLowerCase()
-          .includes(query)
+        w.id.toLowerCase().includes(query) ||
+        w.name.toLowerCase().includes(query) ||
+        w.zoneName.toLowerCase().includes(query)
     )
 
     if (worker) {
@@ -77,24 +110,18 @@ export default function Topbar({ onMenu }) {
       return
     }
 
-    setSearchError(
-      'No worker or zone found'
-    )
+    setSearchError('No worker or zone found')
   }
 
   return (
     <header className="sticky top-0 z-30 min-w-0 border-b border-[#e8edf5] bg-white/95 shadow-[0_1px_8px_rgba(15,35,70,0.04)] backdrop-blur">
-
-      {/* =========================================
-          LIVE PULSE TICKER
-      ========================================== */}
+      {/* LIVE PULSE TICKER */}
       <div className="flex min-w-0 items-center gap-3 border-b border-[#edf1f7] bg-[#f8faff] px-4 py-1.5 sm:px-6">
         <div className="flex shrink-0 items-center gap-1.5">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#00a36c] opacity-60" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-[#00a36c]" />
           </span>
-
           <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#00288e]">
             Live Pulse
           </span>
@@ -103,20 +130,18 @@ export default function Topbar({ onMenu }) {
         <div className="relative min-w-0 flex-1 overflow-hidden">
           <div className="flex w-max animate-ticker gap-8 whitespace-nowrap">
             {tickerItems.map((alert, index) => {
-              const level =
-                levelOf(alert.level)
+              const level = levelOf(alert.level || alert.severity || 'medium')
 
               return (
                 <span
-                  key={index}
+                  key={alert.id || `${alert.workerId}-${alert.type}-${index}`}
                   className={`text-[9.5px] font-medium ${level.text}`}
                 >
-                  {alert.workerId} ·{' '}
-                  {alert.type} ·{' '}
-                  {alert.zoneName}
-
+                  {alert.workerId || alert.cameraId || 'CAMERA'} ·{' '}
+                  {alert.type || alert.title || 'Safety Alert'} ·{' '}
+                  {alert.zoneName || alert.location || 'Unknown Location'}
                   <span className="ml-1 text-slate-400">
-                    — {alert.time}
+                    — {alert.time || formatAlertTime(alert.timestamp)}
                   </span>
                 </span>
               )
@@ -125,11 +150,8 @@ export default function Topbar({ onMenu }) {
         </div>
       </div>
 
-      {/* =========================================
-          MAIN TOPBAR
-      ========================================== */}
+      {/* MAIN TOPBAR */}
       <div className="flex min-h-[64px] min-w-0 items-center gap-3 px-4 sm:px-6">
-
         {/* Mobile Menu */}
         <button
           onClick={onMenu}
@@ -139,28 +161,22 @@ export default function Topbar({ onMenu }) {
           <Menu className="h-5 w-5" />
         </button>
 
-        {/* =========================================
-            SEARCH
-        ========================================== */}
+        {/* SEARCH */}
         <div className="relative hidden min-w-0 flex-1 sm:block sm:max-w-[440px]">
           <form
             onSubmit={handleSearch}
             className="flex h-10 min-w-0 items-center gap-2 rounded-lg bg-[#f1f5fb] px-3 transition focus-within:bg-white focus-within:ring-2 focus-within:ring-[#00288e]/20"
           >
             <Search className="h-[17px] w-[17px] shrink-0 text-slate-400" />
-
             <input
               value={search}
               onChange={(e) => {
-                setSearch(
-                  e.target.value
-                )
+                setSearch(e.target.value)
                 setSearchError('')
               }}
               placeholder="Search worker ID, name, zone..."
               className="min-w-0 w-full bg-transparent text-[12px] text-[#10213a] outline-none placeholder:text-slate-400"
             />
-
             {search && (
               <button
                 type="submit"
@@ -178,32 +194,20 @@ export default function Topbar({ onMenu }) {
           )}
         </div>
 
-        {/* =========================================
-            RIGHT CONTROLS
-        ========================================== */}
+        {/* RIGHT CONTROLS */}
         <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-4">
-
           {/* DATE / TIME */}
           <div className="hidden items-center gap-2 xl:flex">
             <div className="text-right">
               <p className="font-mono text-[11px] font-semibold tabular-nums text-[#334155]">
-                {now.toLocaleDateString(
-                  'en-IN',
-                  {
-                    day: '2-digit',
-                    month: 'short',
-                    year: 'numeric',
-                  }
-                )}{' '}
+                {now.toLocaleDateString('en-IN', {
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                })}{' '}
                 |{' '}
-                {now.toLocaleTimeString(
-                  'en-IN',
-                  {
-                    hour12: false,
-                  }
-                )}
+                {now.toLocaleTimeString('en-IN', { hour12: false })}
               </p>
-
               <p className="mt-0.5 text-[8.5px] uppercase tracking-[0.08em] text-slate-400">
                 India Standard Time
               </p>
@@ -214,10 +218,8 @@ export default function Topbar({ onMenu }) {
           <div className="hidden items-center gap-2 rounded-full bg-[#eef8f3] px-3 py-1.5 md:flex">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#00a36c] opacity-60" />
-
               <span className="relative inline-flex h-2 w-2 rounded-full bg-[#00a36c]" />
             </span>
-
             <span className="text-[9px] font-bold text-[#00714e]">
               System Online
             </span>
@@ -231,23 +233,18 @@ export default function Topbar({ onMenu }) {
           {/* NOTIFICATION */}
           <Link
             to="/alerts"
+            aria-label={`Open alerts${notificationCount ? `, ${notificationCount} new or unacknowledged alerts` : ''}`}
             className="relative grid h-9 w-9 place-items-center rounded-lg text-slate-500 transition hover:bg-[#f1f5fb] hover:text-[#00288e]"
           >
             <Bell className="h-[18px] w-[18px]" />
-
-            {summary.criticalAlerts >
-              0 && (
+            {notificationCount > 0 && (
               <span className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-[#ba1a1a] px-1 text-[8px] font-bold leading-none text-white">
-                {
-                  summary.criticalAlerts
-                }
+                {notificationCount}
               </span>
             )}
           </Link>
 
-          {/* =========================================
-              OPERATOR
-          ========================================== */}
+          {/* OPERATOR */}
           <Link
             to="/monitoring"
             className="flex items-center gap-2.5 rounded-lg py-1 pl-2 transition hover:bg-[#f7f9fd]"
@@ -256,17 +253,14 @@ export default function Topbar({ onMenu }) {
               <p className="text-[10.5px] font-semibold leading-tight text-[#10213a]">
                 Operator Ramesh V.
               </p>
-
               <p className="mt-0.5 text-[8.5px] leading-tight text-slate-400">
                 Chief Safety Desk
               </p>
             </div>
-
             <div className="relative">
               <div className="grid h-8 w-8 place-items-center rounded-full bg-[#00288e]">
                 <UserRound className="h-4 w-4 text-white" />
               </div>
-
               <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#00a36c]" />
             </div>
           </Link>
