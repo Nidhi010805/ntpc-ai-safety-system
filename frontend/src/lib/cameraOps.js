@@ -158,6 +158,35 @@ export function setCameraPresets(cameraId, presets) {
   presetListeners.forEach((notify) => notify())
 }
 
+const DOCK_STORAGE_KEY = 'heightsafe-x.fullscreen-dock'
+
+// Where the fullscreen PTZ dock sits, as a share of the free space on each axis
+// (x: 0 left … 1 right, y: 0 top … 1 bottom), so it stays on screen at any window size.
+export const DOCK_HOME = Object.freeze({ x: 0.5, y: 1 })
+
+export const isDockHome = ({ x, y }) => x === DOCK_HOME.x && y === DOCK_HOME.y
+
+export function readDockPosition() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(DOCK_STORAGE_KEY) ?? 'null')
+    if (isFiniteNumber(stored?.x) && isFiniteNumber(stored?.y)) {
+      return { x: clamp(stored.x, 0, 1), y: clamp(stored.y, 0, 1) }
+    }
+  } catch {
+    // Unreadable or blocked storage: start from the default spot.
+  }
+  return DOCK_HOME
+}
+
+export function storeDockPosition(position) {
+  try {
+    if (isDockHome(position)) localStorage.removeItem(DOCK_STORAGE_KEY)
+    else localStorage.setItem(DOCK_STORAGE_KEY, JSON.stringify(position))
+  } catch {
+    // Storage blocked: the dock still moves, it just isn't remembered after a reload.
+  }
+}
+
 let fullscreenWanted = false
 
 // The whole document goes fullscreen (not just the viewer) so page-level layers like toasts stay visible.
