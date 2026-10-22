@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
   Grid2X2,
+  GripVertical,
   List,
   LocateFixed,
   Maximize,
@@ -25,6 +26,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   Square,
   Trash2,
@@ -35,6 +37,7 @@ import {
   X,
 } from 'lucide-react'
 import {
+  DOCK_HOME,
   MAX_PRESETS,
   PRESET_NAME_MAX,
   TILT_MAX,
@@ -50,11 +53,14 @@ import {
   exitDocumentFullscreen,
   fileStamp,
   getPresets,
+  isDockHome,
   nextPresetId,
   osdTime,
   ptzView,
+  readDockPosition,
   round1,
   setCameraPresets,
+  storeDockPosition,
   subscribeToPresets,
   subscribeToSeconds,
   viewTransform,
@@ -3246,6 +3252,24 @@ const KEY_MOVES = {
   _: { zoom: -1 },
 }
 
+const DOCK_EDGE = 16 // px kept clear between the dock and the screen edges
+const DOCK_GAP = 8 // px kept clear between the dock and the top bar
+const DOCK_WAKE_MS = 2500
+const DOCK_KEY_STEPS = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+}
+
+// left/top place the dock's anchor point and the translate pulls the dock back by the same share
+// of its own size, so x/y from 0 to 1 span exactly the free space: it can't end up off screen.
+const dockPlacement = ({ x, y }) => ({
+  left: `calc(${DOCK_EDGE}px + ${x} * (100% - ${2 * DOCK_EDGE}px))`,
+  top: `calc(${DOCK_GAP}px + ${y} * (100% - ${DOCK_GAP + DOCK_EDGE}px))`,
+  transform: `translate(${x * -100}%, ${y * -100}%)`,
+})
+
 function FullscreenViewer({
   camera,
   ops,
@@ -3258,13 +3282,22 @@ function FullscreenViewer({
   const [controlsVisible, setControlsVisible] = useState(true)
   // null when closed; { preset } when editing, {} when adding.
   const [presetForm, setPresetForm] = useState(null)
+  const [dock, setDock] = useState(readDockPosition)
+  const [dragging, setDragging] = useState(false)
+  // The dock rests faded so the video shows through; it is lit for a moment after opening,
+  // a shortcut key or a tap, and whenever it is hovered or has keyboard focus.
+  const [dockAwake, setDockAwake] = useState(true)
   const rootRef = useRef(null)
+  const dockRef = useRef(null)
+  const dragRef = useRef(null)
+  const wakeTimer = useRef(null)
   const lastKeyMove = useRef(0)
   const { ptz, focus } = ops
   const { hold, nudge, zoomBy } = controls
   const detection = DETECTIONS[camera.status]
     ? ALERT_META[camera.status].detection
     : null
+  const dockLit = dockAwake || dragging || presetForm !== null
 
   // Lock the page scroll behind the viewer and move focus into it; restore both on close.
   useEffect(() => {
@@ -3281,6 +3314,84 @@ function FullscreenViewer({
       }
     }
   }, [])
+
+  useEffect(() => {
+    wakeTimer.current = setTimeout(() => setDockAwake(false), DOCK_WAKE_MS)
+    return () => clearTimeout(wakeTimer.current)
+  }, [])
+
+  // Remember where the operator left the dock; a drag is saved once it ends.
+  useEffect(() => {
+    if (!dragging) storeDockPosition(dock)
+  }, [dock, dragging])
+
+  const wakeDock = () => {
+    clearTimeout(wakeTimer.current)
+    setDockAwake(true)
+    wakeTimer.current = setTimeout(() => setDockAwake(false), DOCK_WAKE_MS)
+  }
+
+  const showControls = () => {
+    setControlsVisible(true)
+    wakeDock()
+  }
+
+  const resetDock = () => {
+    setDock(DOCK_HOME)
+    showControls()
+  }
+
+  const startDockDrag = (event) => {
+    const panel = dockRef.current
+    if (event.button !== 0 || !panel) return
+
+    const lane = panel.parentElement.getBoundingClientRect()
+    const box = panel.getBoundingClientRect()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      from: dock,
+      // Free space on each axis, using the same margins as dockPlacement.
+      spanX: lane.width - 2 * DOCK_EDGE - box.width,
+      spanY: lane.height - DOCK_GAP - DOCK_EDGE - box.height,
+    }
+    setDragging(true)
+  }
+
+  const moveDockDrag = (event) => {
+    const drag = dragRef.current
+    if (drag?.pointerId !== event.pointerId) return
+
+    const shift = (from, delta, span) => (span > 0 ? clamp(from + delta / span, 0, 1) : from)
+    setDock({
+      x: shift(drag.from.x, event.clientX - drag.startX, drag.spanX),
+      y: shift(drag.from.y, event.clientY - drag.startY, drag.spanY),
+    })
+  }
+
+  const endDockDrag = (event) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return
+    dragRef.current = null
+    setDragging(false)
+    // Mouse users get focus dropped, so the arrow keys go back to pan/tilt.
+    event.currentTarget.blur()
+  }
+
+  // Keyboard users move the dock with the arrow keys while the grip has focus.
+  const nudgeDock = (event) => {
+    const step = DOCK_KEY_STEPS[event.key]
+    if (!step) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    const amount = event.shiftKey ? 0.25 : 0.05
+    setDock((at) => ({
+      x: clamp(at.x + step[0] * amount, 0, 1),
+      y: clamp(at.y + step[1] * amount, 0, 1),
+    }))
+  }
 
   // Esc or the browser's own exit control left fullscreen: close the viewer with it.
   const onFullscreenChange = useEffectEvent(() => {
@@ -3309,6 +3420,7 @@ function FullscreenViewer({
       lastKeyMove.current = event.timeStamp
       if (move.zoom) zoomBy(move.zoom)
       else nudge(move.pan, move.tilt)
+      wakeDock()
       return
     }
 
@@ -3318,10 +3430,12 @@ function FullscreenViewer({
 
     if (key === 'h' || key === 'Home') controls.goHome()
     else if (key === 'c') setControlsVisible((visible) => !visible)
+    else if (key === 'r') resetDock()
     else if (preset) controls.recallPreset(preset)
     else return
 
     event.preventDefault()
+    wakeDock()
   })
 
   useEffect(() => {
@@ -3363,14 +3477,15 @@ function FullscreenViewer({
       </div>
 
       {motion.label && (
-        <span className="pointer-events-none absolute left-1/2 top-28 -translate-x-1/2 rounded-md bg-[#00288e]/90 px-3 py-1.5 font-mono text-[11px] font-bold">
+        <span className="pointer-events-none absolute left-1/2 top-28 z-10 -translate-x-1/2 rounded-md bg-[#00288e]/90 px-3 py-1.5 font-mono text-[11px] font-bold">
           PTZ MOVING → {motion.label}
         </span>
       )}
 
       {controlsVisible ? (
-        <>
-          <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-3 bg-gradient-to-b from-black/80 via-black/45 to-transparent px-5 pb-12 pt-4">
+        <div className="pointer-events-none absolute inset-0 flex flex-col">
+          {/* The negative margin starts the dock lane where the top bar's buttons end, under its fade. */}
+          <div className="-mb-12 flex flex-wrap items-start justify-between gap-3 bg-gradient-to-b from-black/80 via-black/45 to-transparent px-5 pb-12 pt-4">
             <div className="pointer-events-auto flex min-w-0 items-start gap-3">
               <span className="shrink-0 rounded-md bg-[#00288e] px-2 py-1 text-[11px] font-bold">
                 {camera.id}
@@ -3494,182 +3609,234 @@ function FullscreenViewer({
             </div>
           </div>
 
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center gap-1.5 px-4 pb-4">
-            <div className="pointer-events-auto flex max-w-full flex-wrap items-start justify-center gap-x-6 gap-y-3 rounded-2xl border border-white/10 bg-black/65 px-5 py-3 shadow-2xl backdrop-blur-md">
-              <DockGroup label="Pan & Tilt">
-                <div className="grid grid-cols-3 gap-1">
-                  <span />
-                  <ViewerButton label="Tilt up" {...hold(() => nudge(0, 1))}>↑</ViewerButton>
-                  <span />
-                  <ViewerButton label="Pan left" {...hold(() => nudge(-1, 0))}>←</ViewerButton>
+          {/* Dock lane: the part of the screen below the top bar. */}
+          <div className="relative flex-1">
+            <div
+              ref={dockRef}
+              style={dockPlacement(dock)}
+              onPointerDown={wakeDock}
+              className={`pointer-events-auto absolute flex w-max max-w-[calc(100%-32px)] flex-col items-center gap-1.5 transition-opacity duration-300 ${
+                dragging ? '' : 'motion-safe:transition-[left,top,transform,opacity]'
+              } ${
+                dockLit
+                  ? 'opacity-100'
+                  : 'opacity-40 hover:opacity-100 has-[:focus-visible]:opacity-100'
+              }`}
+            >
+              <div className="relative flex max-w-full items-stretch gap-4 rounded-2xl border border-white/15 bg-black/40 py-3 pl-2 pr-5 shadow-lg">
+                <div className="flex shrink-0 flex-col items-stretch gap-1 border-r border-white/10 pr-2">
                   <button
                     type="button"
-                    onClick={controls.goHome}
-                    aria-label="Return to home position"
-                    title="Return to home position (H)"
-                    className="grid h-8 w-8 place-items-center rounded-full bg-[#00288e] text-[7px] font-bold transition hover:bg-[#1a44b8]"
+                    aria-label="Move controls panel"
+                    title="Drag to move · double-click or R to reset"
+                    onPointerDown={startDockDrag}
+                    onPointerMove={moveDockDrag}
+                    onPointerUp={endDockDrag}
+                    onPointerCancel={endDockDrag}
+                    onLostPointerCapture={endDockDrag}
+                    onDoubleClick={resetDock}
+                    onKeyDown={nudgeDock}
+                    className={`flex flex-1 touch-none items-center justify-center rounded-md transition ${
+                      dragging
+                        ? 'cursor-grabbing bg-white/20 text-white'
+                        : 'cursor-grab text-white/60 hover:bg-white/10 hover:text-white'
+                    }`}
                   >
-                    HOME
-                  </button>
-                  <ViewerButton label="Pan right" {...hold(() => nudge(1, 0))}>→</ViewerButton>
-                  <span />
-                  <ViewerButton label="Tilt down" {...hold(() => nudge(0, -1))}>↓</ViewerButton>
-                  <span />
-                </div>
-              </DockGroup>
-
-              <DockGroup label="Zoom">
-                <div className="flex items-center gap-1.5">
-                  <ViewerButton
-                    label="Zoom out"
-                    disabled={ptz.zoom <= ZOOM_MIN}
-                    {...hold(() => zoomBy(-1), ptz.zoom <= ZOOM_MIN)}
-                  >
-                    −
-                  </ViewerButton>
-                  <span className="w-12 text-center font-mono text-[14px] font-bold">
-                    {ptz.zoom.toFixed(1)}x
-                  </span>
-                  <ViewerButton
-                    label="Zoom in"
-                    disabled={ptz.zoom >= ZOOM_MAX}
-                    {...hold(() => zoomBy(1), ptz.zoom >= ZOOM_MAX)}
-                  >
-                    +
-                  </ViewerButton>
-                </div>
-                <DockNote>Optical {ZOOM_MAX}x max</DockNote>
-              </DockGroup>
-
-              <DockGroup label={`Speed ${controls.speed}%`}>
-                {/* Mouse users get focus dropped after a drag, so arrow keys go back to pan/tilt. */}
-                <input
-                  type="range"
-                  min="10"
-                  max="100"
-                  value={controls.speed}
-                  onChange={(event) => controls.setSpeed(Number(event.target.value))}
-                  onPointerUp={(event) => event.currentTarget.blur()}
-                  aria-label="PTZ speed"
-                  className="mt-2 w-28 accent-white"
-                />
-                <DockNote>Step {controls.step.toFixed(1)}° per press</DockNote>
-              </DockGroup>
-
-              <DockGroup label="Focus">
-                <div className="flex gap-1">
-                  <ViewerButton
-                    label="Auto focus"
-                    active={focus.mode === 'auto'}
-                    aria-pressed={focus.mode === 'auto'}
-                    onClick={controls.autoFocus}
-                  >
-                    <span className="text-[11px]">AF</span>
-                  </ViewerButton>
-                  <ViewerButton label="Manual focus −" {...hold(() => controls.manualFocus(-1))}>
-                    −
-                  </ViewerButton>
-                  <ViewerButton label="Manual focus +" {...hold(() => controls.manualFocus(1))}>
-                    +
-                  </ViewerButton>
-                </div>
-                <DockNote>
-                  {focus.mode === 'auto'
-                    ? controls.focusing
-                      ? 'AF searching…'
-                      : 'AF locked'
-                    : `MF ${focus.value}% · sharpest at 50%`}
-                </DockNote>
-              </DockGroup>
-
-              <DockGroup label={`Presets ${controls.presets.length}/${MAX_PRESETS}`}>
-                <div className="relative flex w-[368px] max-w-full flex-col gap-1">
-                  {controls.presets.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-1">
-                      {controls.presets.map((preset, index) => {
-                        const active = ops.activePreset === preset.id
-
-                        return (
-                          <div key={preset.id} className="flex min-w-0 gap-0.5">
-                            <button
-                              type="button"
-                              onClick={() => controls.recallPreset(preset)}
-                              aria-label={`Go to preset ${preset.name}`}
-                              title={`${preset.name} · ${describePosition(preset.position)}`}
-                              className={`flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-[10px] font-semibold transition ${
-                                active
-                                  ? 'bg-white text-[#00288e]'
-                                  : 'bg-white/10 hover:bg-white/20'
-                              }`}
-                            >
-                              <span
-                                className={`grid h-4 w-4 shrink-0 place-items-center rounded font-mono text-[9px] font-bold ${
-                                  active ? 'bg-[#00288e] text-white' : 'bg-white/20'
-                                }`}
-                              >
-                                {index + 1}
-                              </span>
-                              <span className="truncate">{preset.name}</span>
-                            </button>
-
-                            <ViewerButton
-                              label={`Edit preset ${preset.name}`}
-                              size="sm"
-                              onClick={() => setPresetForm({ preset })}
-                            >
-                              <Pencil className="h-3 w-3" />
-                            </ViewerButton>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <p className="py-1.5 text-center text-[10px] text-white/60">
-                      No presets yet for this camera
-                    </p>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => setPresetForm({})}
-                    disabled={controls.presets.length >= MAX_PRESETS}
-                    className="flex h-7 items-center justify-center gap-1.5 rounded-md border border-dashed border-white/25 text-[10px] font-semibold text-white/85 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <Plus className="h-3 w-3" />
-                    {controls.presets.length >= MAX_PRESETS
-                      ? `Preset limit reached (${MAX_PRESETS}/${MAX_PRESETS})`
-                      : 'Save current view as preset'}
+                    <GripVertical className="h-4 w-4" />
                   </button>
 
-                  {presetForm && (
-                    <div className="absolute bottom-full right-0 mb-10 w-[320px] max-w-[calc(100vw-32px)] rounded-xl border border-white/15 bg-[#0b1220]/95 p-3 text-left shadow-2xl backdrop-blur-md">
-                      <PresetForm
-                        key={presetForm.preset?.id ?? 'new'}
-                        tone="dark"
-                        preset={presetForm.preset}
-                        current={ptz}
-                        presets={controls.presets}
-                        onSave={(draft) => {
-                          controls.savePreset(draft, presetForm.preset)
-                          setPresetForm(null)
-                        }}
-                        onDelete={() => {
-                          controls.deletePreset(presetForm.preset)
-                          setPresetForm(null)
-                        }}
-                        onCancel={() => setPresetForm(null)}
-                      />
-                    </div>
-                  )}
+                  <ViewerButton
+                    label="Reset panel position (R)"
+                    size="sm"
+                    onClick={resetDock}
+                    disabled={isDockHome(dock)}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </ViewerButton>
                 </div>
-              </DockGroup>
+
+                <div className="flex min-w-0 flex-wrap items-start justify-center gap-x-6 gap-y-3">
+                  <DockGroup label="Pan & Tilt">
+                    <div className="grid grid-cols-3 gap-1">
+                      <span />
+                      <ViewerButton label="Tilt up" {...hold(() => nudge(0, 1))}>↑</ViewerButton>
+                      <span />
+                      <ViewerButton label="Pan left" {...hold(() => nudge(-1, 0))}>←</ViewerButton>
+                      <button
+                        type="button"
+                        onClick={controls.goHome}
+                        aria-label="Return to home position"
+                        title="Return to home position (H)"
+                        className="grid h-8 w-8 place-items-center rounded-full bg-[#00288e] text-[7px] font-bold transition hover:bg-[#1a44b8]"
+                      >
+                        HOME
+                      </button>
+                      <ViewerButton label="Pan right" {...hold(() => nudge(1, 0))}>→</ViewerButton>
+                      <span />
+                      <ViewerButton label="Tilt down" {...hold(() => nudge(0, -1))}>↓</ViewerButton>
+                      <span />
+                    </div>
+                  </DockGroup>
+
+                  <DockGroup label="Zoom">
+                    <div className="flex items-center gap-1.5">
+                      <ViewerButton
+                        label="Zoom out"
+                        disabled={ptz.zoom <= ZOOM_MIN}
+                        {...hold(() => zoomBy(-1), ptz.zoom <= ZOOM_MIN)}
+                      >
+                        −
+                      </ViewerButton>
+                      <span className="w-12 text-center font-mono text-[14px] font-bold">
+                        {ptz.zoom.toFixed(1)}x
+                      </span>
+                      <ViewerButton
+                        label="Zoom in"
+                        disabled={ptz.zoom >= ZOOM_MAX}
+                        {...hold(() => zoomBy(1), ptz.zoom >= ZOOM_MAX)}
+                      >
+                        +
+                      </ViewerButton>
+                    </div>
+                    <DockNote>Optical {ZOOM_MAX}x max</DockNote>
+                  </DockGroup>
+
+                  <DockGroup label={`Speed ${controls.speed}%`}>
+                    {/* Mouse users get focus dropped after a drag, so arrow keys go back to pan/tilt. */}
+                    <input
+                      type="range"
+                      min="10"
+                      max="100"
+                      value={controls.speed}
+                      onChange={(event) => controls.setSpeed(Number(event.target.value))}
+                      onPointerUp={(event) => event.currentTarget.blur()}
+                      aria-label="PTZ speed"
+                      className="mt-2 w-28 accent-white"
+                    />
+                    <DockNote>Step {controls.step.toFixed(1)}° per press</DockNote>
+                  </DockGroup>
+
+                  <DockGroup label="Focus">
+                    <div className="flex gap-1">
+                      <ViewerButton
+                        label="Auto focus"
+                        active={focus.mode === 'auto'}
+                        aria-pressed={focus.mode === 'auto'}
+                        onClick={controls.autoFocus}
+                      >
+                        <span className="text-[11px]">AF</span>
+                      </ViewerButton>
+                      <ViewerButton label="Manual focus −" {...hold(() => controls.manualFocus(-1))}>
+                        −
+                      </ViewerButton>
+                      <ViewerButton label="Manual focus +" {...hold(() => controls.manualFocus(1))}>
+                        +
+                      </ViewerButton>
+                    </div>
+                    <DockNote>
+                      {focus.mode === 'auto'
+                        ? controls.focusing
+                          ? 'AF searching…'
+                          : 'AF locked'
+                        : `MF ${focus.value}% · sharpest at 50%`}
+                    </DockNote>
+                  </DockGroup>
+
+                  <DockGroup label={`Presets ${controls.presets.length}/${MAX_PRESETS}`}>
+                    <div className="flex w-[368px] max-w-full flex-col gap-1">
+                      {controls.presets.length > 0 ? (
+                        <div className="grid grid-cols-2 gap-1">
+                          {controls.presets.map((preset, index) => {
+                            const active = ops.activePreset === preset.id
+
+                            return (
+                              <div key={preset.id} className="flex min-w-0 gap-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => controls.recallPreset(preset)}
+                                  aria-label={`Go to preset ${preset.name}`}
+                                  title={`${preset.name} · ${describePosition(preset.position)}`}
+                                  className={`flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-[10px] font-semibold transition ${
+                                    active
+                                      ? 'bg-white text-[#00288e]'
+                                      : 'bg-white/10 hover:bg-white/20'
+                                  }`}
+                                >
+                                  <span
+                                    className={`grid h-4 w-4 shrink-0 place-items-center rounded font-mono text-[9px] font-bold ${
+                                      active ? 'bg-[#00288e] text-white' : 'bg-white/20'
+                                    }`}
+                                  >
+                                    {index + 1}
+                                  </span>
+                                  <span className="truncate">{preset.name}</span>
+                                </button>
+
+                                <ViewerButton
+                                  label={`Edit preset ${preset.name}`}
+                                  size="sm"
+                                  onClick={() => setPresetForm({ preset })}
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </ViewerButton>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <p className="py-1.5 text-center text-[10px] text-white/60">
+                          No presets yet for this camera
+                        </p>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setPresetForm({})}
+                        disabled={controls.presets.length >= MAX_PRESETS}
+                        className="flex h-7 items-center justify-center gap-1.5 rounded-md border border-dashed border-white/25 text-[10px] font-semibold text-white/85 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Plus className="h-3 w-3" />
+                        {controls.presets.length >= MAX_PRESETS
+                          ? `Preset limit reached (${MAX_PRESETS}/${MAX_PRESETS})`
+                          : 'Save current view as preset'}
+                      </button>
+                    </div>
+                  </DockGroup>
+                </div>
+
+                {/* Opens on whichever side of the dock has more room. */}
+                {presetForm && (
+                  <div
+                    className={`absolute right-0 w-[320px] max-w-[calc(100vw-32px)] rounded-xl border border-white/15 bg-[#0b1220]/95 p-3 text-left shadow-2xl backdrop-blur-md ${
+                      dock.y < 0.5 ? 'top-full mt-2' : 'bottom-full mb-2'
+                    }`}
+                  >
+                    <PresetForm
+                      key={presetForm.preset?.id ?? 'new'}
+                      tone="dark"
+                      preset={presetForm.preset}
+                      current={ptz}
+                      presets={controls.presets}
+                      onSave={(draft) => {
+                        controls.savePreset(draft, presetForm.preset)
+                        setPresetForm(null)
+                      }}
+                      onDelete={() => {
+                        controls.deletePreset(presetForm.preset)
+                        setPresetForm(null)
+                      }}
+                      onCancel={() => setPresetForm(null)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <p className="hidden rounded-full bg-black/40 px-3 py-0.5 text-[10px] font-medium text-white/80 md:block">
+                ← ↑ → ↓ pan / tilt · + / − zoom · H home · 1–4 presets · R reset panel · C hide controls · Esc exit
+              </p>
             </div>
-
-            <p className="hidden rounded-full bg-black/55 px-3 py-0.5 text-[10px] font-medium text-white/75 backdrop-blur md:block">
-              ← ↑ → ↓ pan / tilt · + / − zoom · H home · 1–4 presets · C hide controls · Esc exit
-            </p>
           </div>
-        </>
+        </div>
       ) : (
         <>
           <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-lg bg-black/55 px-2.5 py-1.5 font-mono text-[11px] font-semibold backdrop-blur">
@@ -3683,7 +3850,7 @@ function FullscreenViewer({
           <div className="absolute right-4 top-4 flex gap-1 rounded-xl bg-black/60 p-1 backdrop-blur">
             <button
               type="button"
-              onClick={() => setControlsVisible(true)}
+              onClick={showControls}
               className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-bold transition hover:bg-white/15"
             >
               <Eye className="h-3.5 w-3.5" />
