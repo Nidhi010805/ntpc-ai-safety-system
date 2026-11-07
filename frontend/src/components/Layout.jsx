@@ -1,7 +1,9 @@
+
 import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
+import SafetyCartoonAssistant from './SafetyCartoonAssistant'
 
 export default function Layout() {
   const [open, setOpen] = useState(false)
@@ -27,6 +29,9 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Cartoon Safety Officer */}
+      <SafetyCartoonAssistant />
     </div>
   )
 }
