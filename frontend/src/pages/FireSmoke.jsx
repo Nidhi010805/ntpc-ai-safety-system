@@ -81,14 +81,25 @@ export default function FireSmoke() {
     setUploading(true)
 
     try {
-      const uploadedJob = await uploadFireSmokeVideo(file)
+      const response = await uploadFireSmokeVideo(file)
+
+      // Backend response contains job inside response.job
+      const uploadedJob =
+        response?.job ||
+        response?.data?.job ||
+        response?.data ||
+        response
 
       if (!uploadedJob?.job_id) {
+        console.error('Invalid upload response:', response)
         throw new Error('Backend did not return a valid job ID.')
       }
 
       setJob(uploadedJob)
+      setResults(uploadedJob.result || null)
+
     } catch (err) {
+      console.error('Video upload error:', err)
       setError(err.message || 'Video upload failed.')
     } finally {
       setUploading(false)
@@ -102,12 +113,18 @@ export default function FireSmoke() {
     setRefreshing(true)
 
     try {
-      const updatedJob = await getFireSmokeJob(jobId)
+      const response = await getFireSmokeJob(jobId)
+      const updatedJob = response?.job || response?.data?.job || response?.data || response
+
+      if (!updatedJob?.job_id) {
+        throw new Error('Invalid job status response.')
+      }
+
       setJob(updatedJob)
 
       if (updatedJob.status === 'completed') {
         const actualResults = await getFireSmokeResults(jobId)
-        setResults(actualResults)
+        setResults(actualResults?.result || actualResults)
       }
 
       if (updatedJob.status === 'failed') {

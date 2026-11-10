@@ -2,6 +2,8 @@
 import uuid
 import shutil
 import threading
+import sqlite3
+import json
 
 from collections import deque
 from pathlib import Path
@@ -11,23 +13,85 @@ from datetime import datetime, timezone
 # Directory Configuration
 BASE_DIR = Path(__file__).resolve().parents[2]
 
-UPLOAD_DIR = BASE_DIR / "data" / "fire_smoke" / "uploads"
-OUTPUT_DIR = BASE_DIR / "data" / "fire_smoke" / "outputs"
+DATA_DIR = BASE_DIR / "data" / "fire_smoke"
+UPLOAD_DIR = DATA_DIR / "uploads"
+OUTPUT_DIR = DATA_DIR / "outputs"
+DB_PATH = DATA_DIR / "jobs.db"
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # Job Storage
-_jobs = {}
 _jobs_lock = threading.Lock()
 _pending_jobs = deque()
 
-
-# Allowed Video Formats
 ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
 
 
+# Database Connection
+def get_db_connection():
+    connection = sqlite3.connect(DB_PATH, timeout=30)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+# Initialize Database
+def initialize_database():
+    with get_db_connection() as connection:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS jobs (
+                job_id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                progress INTEGER DEFAULT 0,
+                message TEXT,
+                result TEXT,
+                error TEXT
+            )
+        """)
+
+        connection.commit()
+
+
+# Convert database row into dictionary
+def row_to_job(row):
+    if row is None:
+        return None
+
+    job = dict(row)
+
+    if job["result"]:
+        job["result"] = json.loads(job["result"])
+    else:
+        job["result"] = None
+
+    return job
+
+
+# Restore pending jobs after backend restart
+def restore_pending_jobs():
+    with get_db_connection() as connection:
+        rows = connection.execute("""
+            SELECT job_id
+            FROM jobs
+            WHERE status = 'queued'
+            ORDER BY created_at ASC
+        """).fetchall()
+
+    with _jobs_lock:
+        _pending_jobs.clear()
+        _pending_jobs.extend(row["job_id"] for row in rows)
+
+
+# Create database when this module loads
+initialize_database()
+restore_pending_jobs()
+
+
+# Create Job
 def create_job(source_file: str, job_id: str = None) -> dict:
     """Create a new video-processing job."""
 
@@ -46,41 +110,105 @@ def create_job(source_file: str, job_id: str = None) -> dict:
         "error": None
     }
 
-    with _jobs_lock:
-        _jobs[job_id] = job
+    with get_db_connection() as connection:
+        connection.execute("""
+            INSERT INTO jobs (
+                job_id, status, filename,
+                created_at, updated_at, progress,
+                message, result, error
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            job["job_id"],
+            job["status"],
+            job["filename"],
+            job["created_at"],
+            job["updated_at"],
+            job["progress"],
+            job["message"],
+            None,
+            job["error"]
+        ))
+
+        connection.commit()
 
     return job.copy()
 
 
+# Get Job
 def get_job(job_id: str):
     """Get job details."""
 
-    with _jobs_lock:
-        job = _jobs.get(job_id)
-        return job.copy() if job else None
+    with get_db_connection() as connection:
+        row = connection.execute(
+            "SELECT * FROM jobs WHERE job_id = ?",
+            (job_id,)
+        ).fetchone()
+
+    return row_to_job(row)
 
 
+# Update Job
 def update_job(job_id: str, **updates):
     """Update job status or result."""
 
-    with _jobs_lock:
-        job = _jobs.get(job_id)
+    allowed_fields = {
+        "status",
+        "filename",
+        "progress",
+        "message",
+        "result",
+        "error"
+    }
 
-        if not job:
+    updates = {
+        key: value
+        for key, value in updates.items()
+        if key in allowed_fields
+    }
+
+    if not updates:
+        return get_job(job_id)
+
+    updates["updated_at"] = datetime.now(
+        timezone.utc
+    ).isoformat()
+
+    if "result" in updates:
+        updates["result"] = (
+            json.dumps(updates["result"])
+            if updates["result"] is not None
+            else None
+        )
+
+    columns = ", ".join(
+        f"{column} = ?" for column in updates
+    )
+
+    values = list(updates.values())
+    values.append(job_id)
+
+    with get_db_connection() as connection:
+        cursor = connection.execute(
+            f"UPDATE jobs SET {columns} WHERE job_id = ?",
+            values
+        )
+        connection.commit()
+
+        if cursor.rowcount == 0:
             return None
 
-        job.update(updates)
-        job["updated_at"] = datetime.now(
-            timezone.utc
-        ).isoformat()
-
-        return job.copy()
+    return get_job(job_id)
 
 
+# Save Uploaded Video
 def save_video(upload_file) -> tuple[str, str]:
     """Save uploaded video safely."""
 
-    original_name = Path(upload_file.filename or "").name
+    original_name = Path(
+        upload_file.filename or ""
+    ).name
+
     extension = Path(original_name).suffix.lower()
 
     if extension not in ALLOWED_EXTENSIONS:
@@ -90,6 +218,7 @@ def save_video(upload_file) -> tuple[str, str]:
         )
 
     job_id = str(uuid.uuid4())
+
     destination = UPLOAD_DIR / f"{job_id}{extension}"
 
     with destination.open("wb") as buffer:
@@ -98,6 +227,7 @@ def save_video(upload_file) -> tuple[str, str]:
     return job_id, str(destination)
 
 
+# Output File Path
 def get_output_path(job_id: str, filename: str) -> Path:
     """Build a safe output path for a job."""
 
@@ -108,102 +238,102 @@ def get_output_path(job_id: str, filename: str) -> Path:
     return job_dir / safe_name
 
 
+# List All Jobs
 def list_jobs():
     """Return all jobs, newest first."""
 
-    with _jobs_lock:
-        jobs = [job.copy() for job in _jobs.values()]
+    with get_db_connection() as connection:
+        rows = connection.execute("""
+            SELECT * FROM jobs
+            ORDER BY created_at DESC
+        """).fetchall()
 
-    return sorted(
-        jobs,
-        key=lambda item: item["created_at"],
-        reverse=True
-    )
+    return [row_to_job(row) for row in rows]
 
 
+# Queue Job
 def queue_job(job_id: str):
     """Add an uploaded job to the inference queue."""
 
     with _jobs_lock:
-        if job_id not in _jobs:
+        job = get_job(job_id)
+
+        if not job:
+            return False
+
+        if job["status"] in {"completed", "failed"}:
+            return False
+
+        updated = update_job(
+            job_id,
+            status="queued",
+            message="Waiting for inference worker."
+        )
+
+        if not updated:
             return False
 
         if job_id not in _pending_jobs:
             _pending_jobs.append(job_id)
 
-        _jobs[job_id]["status"] = "queued"
-        _jobs[job_id]["message"] = (
-            "Waiting for inference worker."
-        )
-        _jobs[job_id]["updated_at"] = datetime.now(
-            timezone.utc
-        ).isoformat()
-
     return True
 
 
+# Get Next Job
 def get_next_job():
     """Return the next queued job to the worker."""
 
     with _jobs_lock:
         while _pending_jobs:
             job_id = _pending_jobs.popleft()
-            job = _jobs.get(job_id)
+            job = get_job(job_id)
 
             if not job or job["status"] != "queued":
                 continue
 
-            job["status"] = "processing"
-            job["message"] = (
-                "Inference worker is processing the video."
+            updated = update_job(
+                job_id,
+                status="processing",
+                message="Inference worker is processing the video."
             )
-            job["updated_at"] = datetime.now(
-                timezone.utc
-            ).isoformat()
 
-            return job.copy()
+            return updated
 
-        return None
+    return None
 
 
+# Get Input Video
 def get_input_video(job_id: str):
     """Get uploaded video path for a job."""
 
-    with _jobs_lock:
-        job = _jobs.get(job_id)
+    job = get_job(job_id)
 
-        if not job:
-            return None
+    if not job:
+        return None
 
-        video_path = UPLOAD_DIR / job["filename"]
+    video_path = UPLOAD_DIR / job["filename"]
 
-        if not video_path.is_file():
-            return None
+    if not video_path.is_file():
+        return None
 
-        return str(video_path)
+    return str(video_path)
 
 
+# Complete Job
 def complete_job(job_id: str, result: dict):
     """Save inference results and mark job completed."""
 
-    with _jobs_lock:
-        job = _jobs.get(job_id)
-
-        if not job:
-            return None
-
-        job["status"] = "completed"
-        job["progress"] = 100
-        job["result"] = result
-        job["error"] = None
-        job["message"] = "Inference completed."
-        job["updated_at"] = datetime.now(
-            timezone.utc
-        ).isoformat()
-
-        return job.copy()
+    return update_job(
+        job_id,
+        status="completed",
+        progress=100,
+        result=result,
+        error=None,
+        message="Inference completed."
+    )
 
 
+# Fail Job
 def fail_job(job_id: str, error: str):
     """Mark a job as failed."""
 
