@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Upload,
   Download,
@@ -15,11 +15,38 @@ import {
   checkFireSmokeHealth,
   uploadFireSmokeVideo,
   getFireSmokeJob,
+  getFireSmokeJobs,
   getFireSmokeResults,
   getAnnotatedVideoUrl,
   downloadAnnotatedVideo,
   downloadFireSmokeCSV,
 } from '../services/fireSmokeApi'
+
+// Result format written by fire_smoke_worker/worker.py.
+const VERDICTS = {
+  fire: { label: 'Fire detected', tone: 'text-red-600' },
+  smoke: { label: 'Smoke detected', tone: 'text-slate-700' },
+  possible_hidden_fire: { label: 'Possible hidden fire', tone: 'text-amber-600' },
+  clear: { label: 'No fire or smoke', tone: 'text-emerald-600' },
+}
+
+const EVENT_LABELS = {
+  ALARM_ON: (event) => ({
+    label: `${event.class === 'fire' ? 'Fire' : 'Smoke'} alarm`,
+    tone: event.class === 'fire' ? 'text-red-600' : 'text-slate-700',
+  }),
+  ALARM_OFF: () => ({ label: 'Alarm cleared', tone: 'text-emerald-600' }),
+  OCCLUDED_FIRE_CUE: () => ({ label: 'Possible hidden fire', tone: 'text-amber-600' }),
+  OCCLUDED_FIRE_CLEAR: () => ({ label: 'Hidden-fire cue cleared', tone: 'text-emerald-600' }),
+}
+
+function formatTime(seconds) {
+  if (seconds == null) return '—'
+  const minutes = Math.floor(seconds / 60)
+  return `${minutes}:${(seconds % 60).toFixed(1).padStart(4, '0')}`
+}
+
+const formatPercent = (score) => (score == null ? '—' : `${Math.round(score * 100)}%`)
 
 export default function FireSmoke() {
   const [selectedFile, setSelectedFile] = useState(null)
@@ -29,12 +56,17 @@ export default function FireSmoke() {
   const [error, setError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [backendOnline, setBackendOnline] = useState(null)
+  const [worker, setWorker] = useState(null)
+  const [recentJobs, setRecentJobs] = useState([])
+  const videoRef = useRef(null)
 
   const jobId = job?.job_id
   const status = job?.status
 
   const isCompleted = status === 'completed'
   const isProcessing = status === 'processing' || status === 'queued'
+  // Only results written by the inference worker have a verdict.
+  const summary = results?.verdict ? results : null
 
   // BACKEND HEALTH CHECK
   useEffect(() => {
@@ -42,8 +74,11 @@ export default function FireSmoke() {
 
     async function checkBackend() {
       try {
-        await checkFireSmokeHealth()
-        if (mounted) setBackendOnline(true)
+        const health = await checkFireSmokeHealth()
+        if (mounted) {
+          setBackendOnline(true)
+          setWorker(health?.worker || null)
+        }
       } catch {
         if (mounted) setBackendOnline(false)
       }
@@ -148,6 +183,61 @@ export default function FireSmoke() {
     return () => window.clearInterval(interval)
   }, [jobId, status])
 
+  // RECENT JOBS (reloaded whenever the open job changes state)
+  useEffect(() => {
+    let mounted = true
+
+    getFireSmokeJobs()
+      .then((response) => {
+        if (mounted) setRecentJobs(response?.jobs || [])
+      })
+      .catch(() => {})
+
+    return () => {
+      mounted = false
+    }
+  }, [jobId, status])
+
+  function openJob(item) {
+    setJob(item)
+    setResults(item.result || null)
+    setSelectedFile(null)
+    setError(item.status === 'failed' ? item.error || 'Video inference failed.' : '')
+  }
+
+  function seekTo(seconds) {
+    const video = videoRef.current
+    if (!video) return
+
+    video.currentTime = seconds
+    video.play().catch(() => {})
+  }
+
+  const summaryCards = [
+    {
+      label: 'Verdict',
+      value: summary ? VERDICTS[summary.verdict]?.label || summary.verdict : '—',
+      tone: summary ? VERDICTS[summary.verdict]?.tone : '',
+      size: 'text-lg',
+    },
+    {
+      label: 'Alarms raised',
+      value: summary
+        ? summary.fire_alarms + summary.smoke_alarms + summary.hidden_fire_cues
+        : '—',
+      note: summary?.first_alarm_s != null ? `First at ${formatTime(summary.first_alarm_s)}` : null,
+    },
+    {
+      label: 'Highest confidence',
+      value: summary ? formatPercent(summary.peak_score) : '—',
+    },
+    {
+      label: 'Temporal gate',
+      value: summary ? `${summary.settings.enter_hits} of ${summary.settings.window}` : '—',
+      note: summary ? `checks at ≥ ${formatPercent(summary.settings.conf)}` : null,
+    },
+  ]
+
   const cardClass =
     'rounded-2xl border border-slate-200 bg-white shadow-sm'
 
@@ -188,24 +278,44 @@ export default function FireSmoke() {
                 : 'Checking Backend...'}
           </span>
         </div>
+
+        {/* INFERENCE WORKER STATUS */}
+        {backendOnline && worker && (
+          <div className="mt-1 flex items-center gap-2">
+            <span
+              className={`h-2.5 w-2.5 rounded-full ${
+                worker.online ? 'bg-emerald-500' : 'bg-slate-300'
+              }`}
+            />
+
+            <span className="text-xs font-medium text-slate-600">
+              {worker.online
+                ? `AI worker running · ${worker.model} on ${worker.device}${
+                    worker.state === 'processing' ? ' · busy' : ''
+                  }`
+                : 'AI worker not running · uploaded videos wait in the queue'}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* SUMMARY CARDS */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {[
-          'Active events',
-          'Highest confidence',
-          'Steam classified safe',
-          'Temporal gate',
-        ].map((label) => (
-          <div key={label} className={`${cardClass} p-4`}>
+        {summaryCards.map((card) => (
+          <div key={card.label} className={`${cardClass} p-4`}>
             <p className="text-[11px] text-slate-500">
-              {label}
+              {card.label}
             </p>
 
-            <p className="mt-1 text-2xl font-bold text-slate-900">
-              —
+            <p className={`mt-1 font-bold ${card.size || 'text-2xl'} ${card.tone || 'text-slate-900'}`}>
+              {card.value}
             </p>
+
+            {card.note && (
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                {card.note}
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -266,6 +376,56 @@ export default function FireSmoke() {
           </label>
         </div>
       </section>
+
+      {/* RECENT JOBS */}
+      {recentJobs.length > 0 && (
+        <section className={cardClass}>
+          <div className="border-b border-slate-100 px-6 py-4">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-blue-700">
+              History
+            </p>
+
+            <h2 className="mt-1 text-lg font-bold text-slate-900">
+              Recent Videos
+            </h2>
+          </div>
+
+          <ul className="divide-y divide-slate-100">
+            {recentJobs.slice(0, 8).map((item) => {
+              const verdict = item.result?.verdict && VERDICTS[item.result.verdict]
+
+              return (
+                <li key={item.job_id}>
+                  <button
+                    type="button"
+                    onClick={() => openJob(item)}
+                    className={`flex w-full items-center justify-between gap-3 px-6 py-3 text-left transition hover:bg-slate-50 ${
+                      item.job_id === jobId ? 'bg-blue-50' : ''
+                    }`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-mono text-xs text-slate-800">
+                        {item.job_id}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {new Date(item.created_at).toLocaleString()}
+                      </span>
+                    </span>
+
+                    <span
+                      className={`shrink-0 text-xs font-semibold ${
+                        verdict ? verdict.tone : 'text-slate-500'
+                      }`}
+                    >
+                      {verdict ? verdict.label : item.status?.toUpperCase()}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
 
       {/* JOB STATUS */}
       {job && (
@@ -374,17 +534,102 @@ export default function FireSmoke() {
               Video inference completed successfully.
             </div>
 
-            <p className="text-xs text-slate-500">
-              Detection-specific metrics will be mapped here after the model
-              output format is confirmed.
-            </p>
+            {summary && (
+              <p className="text-xs text-slate-500">
+                {summary.model?.name} on {summary.model?.device} · checked 1 in
+                every {summary.settings?.stride} frames · processed in{' '}
+                {summary.processing_seconds} s
+                {summary.video?.duration_s != null &&
+                  ` · ${summary.video.duration_s} s video`}
+              </p>
+            )}
 
             <video
               key={jobId}
+              ref={videoRef}
               controls
               className="aspect-video w-full rounded-xl border border-slate-200 bg-black"
               src={getAnnotatedVideoUrl(jobId)}
             />
+
+            {summary?.browser_playable === false && (
+              <p className="text-xs text-amber-700">
+                This video could not be re-encoded for the browser (the worker has no
+                ffmpeg). Download it to watch it.
+              </p>
+            )}
+
+            {summary && (
+              <div className="overflow-hidden rounded-xl border border-slate-200">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2">
+                  <p className="text-xs font-semibold text-slate-800">
+                    Alarm log
+                  </p>
+
+                  <p className="text-[11px] text-slate-500">
+                    {summary.events_total} event{summary.events_total === 1 ? '' : 's'}
+                    {summary.events.length > 0 && ' · click a time to jump there'}
+                  </p>
+                </div>
+
+                {summary.events.length === 0 ? (
+                  <p className="px-4 py-6 text-center text-xs text-slate-500">
+                    No alarm: the model never saw fire or smoke in{' '}
+                    {summary.settings.enter_hits} of {summary.settings.window} checks
+                    in a row.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="text-[10px] uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-2 font-semibold">Time</th>
+                          <th className="px-4 py-2 font-semibold">Event</th>
+                          <th className="px-4 py-2 font-semibold">Confidence</th>
+                          <th className="px-4 py-2 font-semibold">Details</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {summary.events.map((event, index) => {
+                          const { label, tone } =
+                            EVENT_LABELS[event.event]?.(event) || {
+                              label: event.event,
+                              tone: 'text-slate-700',
+                            }
+
+                          return (
+                            <tr
+                              key={`${event.frame}-${event.event}-${index}`}
+                              className="border-t border-slate-100"
+                            >
+                              <td className="px-4 py-2">
+                                <button
+                                  type="button"
+                                  onClick={() => seekTo(event.time_s)}
+                                  className="font-mono text-blue-700 hover:underline"
+                                >
+                                  {formatTime(event.time_s)}
+                                </button>
+                              </td>
+                              <td className={`px-4 py-2 font-semibold ${tone}`}>
+                                {label}
+                              </td>
+                              <td className="px-4 py-2 text-slate-700">
+                                {formatPercent(event.score)}
+                              </td>
+                              <td className="px-4 py-2 text-slate-500">
+                                {event.detail}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-3">
               <button
@@ -465,10 +710,11 @@ export default function FireSmoke() {
           <ScanSearch className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
 
           <p>
-            Detection classes, confidence scores, timestamps and bounding boxes
-            will be displayed according to the actual model output.
-            Concentration values such as SO₂/NOx/CO₂ are not inferred from RGB
-            video unless a sensor/CEMS feed is integrated.
+            Results come from the fire-and-smoke team's Model 7 (DINOv3 +
+            Faster R-CNN). An alarm is raised only when the same fire or smoke
+            is seen in 6 of 15 consecutive checks, which filters out glare and
+            flicker. Concentration values such as SO₂/NOx/CO₂ are not inferred
+            from RGB video unless a sensor/CEMS feed is integrated.
           </p>
         </div>
       </section>

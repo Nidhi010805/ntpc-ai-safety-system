@@ -26,6 +26,10 @@ from services.fire_smoke.job_manager import (
     get_output_path,
     complete_job,
     fail_job,
+    update_job,
+    requeue_interrupted_jobs,
+    record_worker_heartbeat,
+    get_worker_status,
     OUTPUT_DIR
 )
 
@@ -56,23 +60,59 @@ def verify_worker_token(
 # Health Check
 @router.get("/health")
 def fire_smoke_health():
+    worker = get_worker_status()
+
     return {
         "success": True,
         "service": "fire-smoke-api",
         "status": "running",
-        "model_status": "not_configured"
+        "model_status": "ready" if worker["online"] else "worker_offline",
+        "worker": worker
     }
 
 
 # Model Information
 @router.get("/model-info")
 def fire_smoke_model_info():
+    worker = get_worker_status()
+
     return {
         "success": True,
-        "model_name": "DINOv3 + Faster R-CNN",
-        "model_status": "not_configured",
-        "inference_location": "Kaggle GPU",
-        "message": "Model checkpoint and inference configuration are pending."
+        "model_name": worker["model"] or "DINOv3 + Faster R-CNN",
+        "model_status": "ready" if worker["online"] else "worker_offline",
+        "inference_location": worker["device"] or "not connected",
+        "message": (
+            "The inference worker is connected."
+            if worker["online"]
+            else "No inference worker is running. Uploaded videos wait in the queue."
+        )
+    }
+
+
+# Worker: Heartbeat
+@router.post(
+    "/worker/heartbeat",
+    dependencies=[Depends(verify_worker_token)]
+)
+def worker_heartbeat(payload: dict):
+    record_worker_heartbeat({
+        key: str(payload[key])[:200]
+        for key in ("model", "device", "state", "job_id")
+        if payload.get(key) is not None
+    })
+
+    return {"success": True}
+
+
+# Worker: Requeue Jobs Left Unfinished
+@router.post(
+    "/worker/requeue-interrupted",
+    dependencies=[Depends(verify_worker_token)]
+)
+def worker_requeue_interrupted():
+    return {
+        "success": True,
+        "requeued": requeue_interrupted_jobs()
     }
 
 
@@ -266,12 +306,12 @@ def worker_upload_events(
     }
 
 
-# Worker: Submit Completed Results
+# Worker: Report Progress
 @router.post(
-    "/worker/jobs/{job_id}/complete",
+    "/worker/jobs/{job_id}/progress",
     dependencies=[Depends(verify_worker_token)]
 )
-def worker_complete_job(job_id: str, payload: dict):
+def worker_report_progress(job_id: str, payload: dict):
     job = get_job(job_id)
 
     if not job:
@@ -283,22 +323,50 @@ def worker_complete_job(job_id: str, payload: dict):
             detail="Job is not currently processing."
         )
 
-    result = payload.get("result")
-
-    if not isinstance(result, dict):
+    try:
+        progress = int(payload.get("progress", job["progress"]))
+    except (TypeError, ValueError):
         raise HTTPException(
             status_code=400,
-            detail="A valid result object is required."
+            detail="Progress must be a number from 0 to 99."
         )
 
-    updated_job = complete_job(job_id, result)
+    # 100 is reserved for a completed job.
+    updated_job = update_job(
+        job_id,
+        progress=min(max(progress, 0), 99),
+        message=str(payload.get("message") or job["message"])[:300]
+    )
 
     return {
         "success": True,
-        "message": "Inference results received.",
         "job": updated_job
     }
 
+
+# Worker: Report Failure
+@router.post(
+    "/worker/jobs/{job_id}/fail",
+    dependencies=[Depends(verify_worker_token)]
+)
+def worker_fail_job(job_id: str, payload: dict):
+    job = get_job(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    if job["status"] != "processing":
+        raise HTTPException(
+            status_code=409,
+            detail="Job is not currently processing."
+        )
+
+    error = str(payload.get("error") or "Unknown worker error.")[:1000]
+
+    return {
+        "success": True,
+        "job": fail_job(job_id, error)
+    }
 
 
 # Worker: Submit Completed Results

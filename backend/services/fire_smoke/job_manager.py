@@ -4,6 +4,7 @@ import shutil
 import threading
 import sqlite3
 import json
+import time
 
 from collections import deque
 from pathlib import Path
@@ -343,3 +344,61 @@ def fail_job(job_id: str, error: str):
         error=error,
         message="Video inference failed."
     )
+
+
+# Requeue Interrupted Jobs
+def requeue_interrupted_jobs() -> int:
+    """Put jobs a stopped worker left half-done back at the front of the queue."""
+
+    with get_db_connection() as connection:
+        rows = connection.execute("""
+            SELECT job_id
+            FROM jobs
+            WHERE status = 'processing'
+            ORDER BY created_at ASC
+        """).fetchall()
+
+    job_ids = [row["job_id"] for row in rows]
+
+    with _jobs_lock:
+        for job_id in reversed(job_ids):
+            update_job(
+                job_id,
+                status="queued",
+                progress=0,
+                message="Re-queued: the worker stopped before finishing."
+            )
+
+            if job_id not in _pending_jobs:
+                _pending_jobs.appendleft(job_id)
+
+    return len(job_ids)
+
+
+# Worker Presence
+# The worker reports in every few seconds, also while it is busy with a job.
+WORKER_TIMEOUT_SECONDS = 30
+_worker = {"last_seen": None, "info": {}}
+
+
+def record_worker_heartbeat(info: dict):
+    with _jobs_lock:
+        _worker["last_seen"] = time.time()
+        _worker["info"] = dict(info)
+
+
+def get_worker_status() -> dict:
+    with _jobs_lock:
+        last_seen = _worker["last_seen"]
+        info = dict(_worker["info"])
+
+    seconds_ago = None if last_seen is None else round(time.time() - last_seen)
+
+    return {
+        "online": seconds_ago is not None and seconds_ago < WORKER_TIMEOUT_SECONDS,
+        "last_seen_seconds_ago": seconds_ago,
+        "model": info.get("model"),
+        "device": info.get("device"),
+        "state": info.get("state"),
+        "job_id": info.get("job_id")
+    }

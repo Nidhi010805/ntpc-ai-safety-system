@@ -1,0 +1,8 @@
+# The trained model (~160 MB, over GitHub's 100 MB limit). Share it outside git.
+models/
+*.pt
+
+# The model team's code, cloned here by worker.py on first run.
+fire-and-smoke/
+
+__pycache__/
