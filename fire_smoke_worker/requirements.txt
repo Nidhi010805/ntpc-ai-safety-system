@@ -1,0 +1,13 @@
+# What the model team's predict_video_dinov3.py needs (inference only).
+# On a laptop, PyTorch's CPU build is much smaller; install it first:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+torch>=2.2
+torchvision>=0.17
+timm>=1.0.20
+opencv-python
+numpy
+tqdm
+
+# The worker itself.
+httpx
+imageio-ffmpeg
