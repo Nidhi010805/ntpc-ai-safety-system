@@ -1,0 +1,57 @@
+
+# ==============================
+# Sensitive environment files
+# ==============================
+.env
+.env.*
+!.env.example
+.worker_token
+
+# ==============================
+# Python cache files
+# ==============================
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ==============================
+# Virtual environments
+# ==============================
+venv/
+.venv/
+env/
+ENV/
+
+# ==============================
+# Runtime database files
+# ==============================
+data/fire_smoke/*.db
+data/fire_smoke/*.sqlite
+data/fire_smoke/*.sqlite3
+
+# ==============================
+# Uploaded videos and outputs
+# ==============================
+data/fire_smoke/uploads/
+data/fire_smoke/outputs/
+
+# ==============================
+# Logs
+# ==============================
+*.log
+
+# ==============================
+# Testing and cache
+# ==============================
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ==============================
+# OS and editor files
+# ==============================
+.DS_Store
+Thumbs.db
+.vscode/
