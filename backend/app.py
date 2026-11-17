@@ -1,6 +1,7 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from routes.ppe import router as ppe_router
 
 from routes.safety_agent import (
     router as safety_agent_router
@@ -49,6 +50,13 @@ app.include_router(
     tags=["Fire & Smoke Detection"]
 )
 
+# PPE Detection API
+app.include_router(
+    ppe_router,
+    prefix="/api/ppe",
+    tags=["PPE Detection"]
+)
+
 
 @app.get("/")
 def root():
@@ -72,5 +80,7 @@ def health():
         "service": "heightx-safe-backend",
         "safety_agent": "/api/safety-agent/chat",
         "fire_smoke": "/api/fire-smoke/health",
+        "ppe": "/api/ppe/health",
         "documentation": "/docs"
+
     }
